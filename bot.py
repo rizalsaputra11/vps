@@ -99,51 +99,50 @@ async def register(interaction: discord.Interaction, first_name: str, last_name:
                 await interaction.followup.send(f"❌ Failed to register: {error}")
 
 # /createserver
-@tree.command(name="createserver", description="Create a Minecraft server")
+@tree.command(name="createserver", description="Create a free Minecraft server")
 async def createserver(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    users = load_users()
-
-    if str(interaction.user.id) not in users:
+    
+    with open("users.json", "r") as f:
+        users = json.load(f)
+    
+    user_id = str(interaction.user.id)
+    if user_id not in users:
         await interaction.followup.send("❌ You are not registered. Use `/register` first.")
         return
-
-    user_data = users[str(interaction.user.id)]
-    user_id = user_data["panel_id"]
-
+    
+    user_data = users[user_id]
+    panel_url = "http://panel.dragoncloud.ggff.net"
+    api_key = "YOUR_ADMIN_API_KEY"
     headers = {
-        "Authorization": f"Bearer {PTERO_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "Application/vnd.pterodactyl.v1+json"
     }
 
-    # Get all nodes
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{PTERO_PANEL}/api/application/nodes", headers=headers) as resp:
-            nodes_data = await resp.json()
-
-    # Pick a random node (you can exclude "in1" and "paris" if needed)
-    available_nodes = [node["attributes"]["id"] for node in nodes_data["data"]
-                       if node["attributes"]["name"].lower() not in ["in1", "paris"]]
-
-    if not available_nodes:
-        await interaction.followup.send("❌ No valid nodes found.")
+    # Get valid nodes (excluding PARIS and those with no allocations)
+    nodes_res = requests.get(f"{panel_url}/api/application/nodes", headers=headers)
+    valid_nodes = [
+        n for n in nodes_res.json()['data']
+        if "PARIS" not in n['attributes']['name'].upper() and n['attributes']['allocations'] > 0
+    ]
+    if not valid_nodes:
+        await interaction.followup.send("❌ No valid nodes available right now.")
         return
 
-    node_id = random.choice(available_nodes)
+    # Use the first valid node
+    node_id = valid_nodes[0]['attributes']['id']
+    user_email = user_data["email"]
+    user_id_panel = user_data["id"]
 
+    # Create server payload
     server_name = f"{interaction.user.name}-server"
-    payload = {
+    server_data = {
         "name": server_name,
-        "user": user_id,
-        "egg": 1,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui",
-        "environment": {
-            "DL_VERSION": "latest",
-            "SERVER_JARFILE": "server.jar",
-            "BUILD_NUMBER": "latest"
-        },
+        "user": user_id_panel,
+        "egg": 1,  # Replace with correct egg ID
+        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",  # Update if needed
+        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
         "limits": {
             "memory": 4096,
             "swap": 0,
@@ -152,27 +151,28 @@ async def createserver(interaction: discord.Interaction):
             "cpu": 200
         },
         "feature_limits": {
-            "databases": 0,
+            "databases": 1,
             "allocations": 1,
             "backups": 1
         },
-        "allocation": {
-            "default": 1
+        "environment": {
+            "SERVER_JARFILE": "server.jar",
+            "VERSION": "latest",
+            "BUILD_NUMBER": "latest"
         },
         "deploy": {
-            "locations": [node_id],
+            "locations": [valid_nodes[0]['attributes']['location_id']],
             "dedicated_ip": False,
             "port_range": []
         },
         "start_on_completion": True
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{PTERO_PANEL}/api/application/servers", headers=headers, json=payload) as resp:
-            if resp.status == 201:
-                await interaction.followup.send("✅ Server created! Check your panel.")
-            else:
-                error = await resp.text()
-                await interaction.followup.send(f"❌ Failed to create server: {error}")
+    res = requests.post(f"{panel_url}/api/application/servers", headers=headers, json=server_data)
+
+    if res.status_code == 201:
+        await interaction.followup.send("✅ Server created successfully!")
+    else:
+        await interaction.followup.send(f"❌ Failed to create server: {res.json()}")
 
 bot.run(TOKEN)
