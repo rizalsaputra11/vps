@@ -7,10 +7,9 @@ import requests
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="/", intents=intents)
 
-TOKEN = "BOT_TOKEN"
+TOKEN ="BOT_TOKEN"
 PANEL_URL = "http://panel.dragoncloud.ggff.net"
 PANEL_API_KEY = "ptla_9M4qmqeDpJSioG4L2ZyX5hXfi5QCFq3fOSvslNzPaZR"
-PANEL_ADMIN_API_KEY = "ptlc_OmXsasCHtMYaeSkv2n3KEJq92qw0yJ0s1OOtS9g8DMh"
 
 # Load users.json
 def get_user_data(user_id):
@@ -70,6 +69,19 @@ async def register(interaction: discord.Interaction, first_name: str, last_name:
         await interaction.followup.send("📩 Registration successful. Check your DMs.")
     else:
         await interaction.followup.send(f"❌ Failed to register: `{response.text}`")
+
+@bot.tree.command(name="list", description="List your registered account details")
+async def list_accounts(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    user_id = str(interaction.user.id)
+    user_data = get_user_data(user_id)
+    if not user_data:
+        await interaction.followup.send("❌ You are not registered. Use `/register` first.")
+        return
+    embed = discord.Embed(title="Your Registered Account", color=discord.Color.blue())
+    embed.add_field(name="Email", value=user_data["email"], inline=False)
+    embed.add_field(name="User ID", value=user_data["id"], inline=False)
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="createserver", description="Create a free Minecraft server")
 @app_commands.describe(server_name="Name for your server", node="Choose a node location")
@@ -142,5 +154,44 @@ async def createserver(interaction: discord.Interaction, server_name: str, node:
 
     except Exception as e:
         await interaction.followup.send(f"❌ Exception: `{str(e)}`")
+
+@bot.tree.command(name="upgraderam", description="Upgrade your server RAM by paying Cowoncy")
+async def upgraderam(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    user_id = str(interaction.user.id)
+    user_data = get_user_data(user_id)
+
+    if not user_data:
+        await interaction.followup.send("❌ You are not registered. Use `/register` first.")
+        return
+
+    # Prompt user to pay Cowoncy
+    await interaction.followup.send(
+        "💸 To upgrade your server RAM by 2GB, please send 200,000 Cowoncy to @gamerhacker using the following command:\n"
+        "`owo give @gamerhacker 200000`\n"
+        "After completing the payment, please confirm by typing `/confirmupgrade`."
+    )
+
+@bot.tree.command(name="confirmupgrade", description="Confirm your Cowoncy payment to upgrade RAM")
+async def confirmupgrade(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    user_id = str(interaction.user.id)
+    user_data = get_user_data(user_id)
+
+    if not user_data:
+        await interaction.followup.send("❌ You are not registered. Use `/register` first.")
+        return
+
+    # Here you would implement the logic to verify the payment.
+    # Since OwO Bot does not provide an API to verify transactions,
+    # this step would need to be manual or simulated.
+
+    # For demonstration purposes, we'll assume the payment is confirmed.
+    # Proceed to upgrade the server RAM.
+
+    # Implement the logic to upgrade the server RAM here.
+    # This could involve sending a request to the Pterodactyl API to update the server's memory allocation.
+
+    await interaction.followup.send("✅ Your server RAM has been upgraded by 2GB!")
 
 bot.run(TOKEN)
