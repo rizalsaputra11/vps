@@ -71,9 +71,9 @@ async def list_user(interaction: discord.Interaction):
 @app_commands.describe(name="Server name", node="Select node")
 @app_commands.choices(
     node=[
-        app_commands.Choice(name="in2 - India", value="in2"),
-        app_commands.Choice(name="in3 - India", value="in3"),
-        app_commands.Choice(name="au2 - Australia", value="au2")
+        app_commands.Choice(name="in2 - India", value="3"),  # replace with real location IDs
+        app_commands.Choice(name="in3 - India", value="5"),
+        app_commands.Choice(name="au2 - Australia", value="7")
     ]
 )
 async def createserver(interaction: discord.Interaction, name: str, node: app_commands.Choice[str]):
@@ -109,9 +109,9 @@ async def createserver(interaction: discord.Interaction, name: str, node: app_co
             "default": 1
         },
         "deploy": {
-            "locations": [node.value],
-            "dedicated_ip": False,
-            "port_range": []
+           "locations": [int(node.value)],
+           "dedicated_ip": False,
+           "port_range": []
         }
     }
 
