@@ -71,7 +71,7 @@ async def list_user(interaction: discord.Interaction):
 @app_commands.describe(name="Server name", node="Select node")
 @app_commands.choices(
     node=[
-        app_commands.Choice(name="in2 - India", value="3"),  # replace with real location IDs
+        app_commands.Choice(name="in2 - India", value="3"),
         app_commands.Choice(name="in3 - India", value="5"),
         app_commands.Choice(name="au2 - Australia", value="7")
     ]
@@ -86,32 +86,29 @@ async def createserver(interaction: discord.Interaction, name: str, node: app_co
     data = {
         "name": name,
         "user": user_data["id"],
-        "egg": 1,
+        "egg": 16,
         "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
         "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
         "environment": {
             "SERVER_JARFILE": "server.jar",
-            "VANILLA_VERSION": "latest",
-            "MINECRAFT_VERSION": "latest"
+            "MINECRAFT_VERSION": "latest",
+            "PAPER_VERSION": "latest"
         },
         "limits": {
             "memory": 4096,
             "swap": 0,
             "disk": 10240,
             "io": 500,
-            "cpu": 200
+            "cpu": 100
         },
         "feature_limits": {
             "databases": 0,
             "allocations": 1
         },
-        "allocation": {
-            "default": 1
-        },
         "deploy": {
-           "locations": [int(node.value)],
-           "dedicated_ip": False,
-           "port_range": []
+            "locations": [int(node.value)],
+            "dedicated_ip": False,
+            "port_range": []
         }
     }
 
@@ -120,6 +117,21 @@ async def createserver(interaction: discord.Interaction, name: str, node: app_co
         await interaction.followup.send("✅ Server created successfully!")
     else:
         await interaction.followup.send(f"❌ Failed to create server: {response.text}")
+
+@tree.command(name="myserver")
+async def myserver(interaction: discord.Interaction):
+    user_data = get_user_data(interaction.user.id)
+    if not user_data:
+        await interaction.response.send_message("❌ You are not registered.")
+        return
+
+    servers = requests.get(f"{PANEL_URL}/api/application/users/{user_data['id']}/servers", headers=HEADERS).json()
+    if not servers["data"]:
+        await interaction.response.send_message("🔍 No servers found for your account.")
+        return
+
+    srv = servers["data"][0]["attributes"]
+    await interaction.response.send_message(f"📡 Your Server:\nName: {srv['name']}\nID: {srv['identifier']}\nIP: {srv['allocations'][0]['ip']}:{srv['allocations'][0]['port']}\nLimits: {srv['limits']['memory']}MB RAM, {srv['limits']['cpu']}% CPU")
 
 @tree.command(name="upgraderam")
 async def upgraderam(interaction: discord.Interaction):
