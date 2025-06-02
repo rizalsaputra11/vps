@@ -4,7 +4,7 @@ from discord.ext import commands
 import json
 import requests
 
-TOKEN = "BOT_TOKEN"
+TOKEN = "YOUR_DISCORD_BOT_TOKEN"
 PANEL_URL = "http://panel.dragoncloud.ggff.net"
 API_KEY = "ptla_9M4qmqeDpJSioG4L2ZyX5hXfi5QCFq3fOSvslNzPaZR"
 HEADERS = {
@@ -81,6 +81,11 @@ async def createserver(interaction: discord.Interaction, name: str, node: app_co
     user_data = get_user_data(interaction.user.id)
     if not user_data:
         await interaction.followup.send("❌ You are not registered. Use /register first.")
+        return
+
+    check_existing = requests.get(f"{PANEL_URL}/api/application/users/{user_data['id']}/servers", headers=HEADERS)
+    if check_existing.status_code == 200 and check_existing.json()["data"]:
+        await interaction.followup.send("❌ You already have a server.")
         return
 
     data = {
