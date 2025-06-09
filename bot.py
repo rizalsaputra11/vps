@@ -69,8 +69,6 @@ async def on_ready():
     await tree.sync()
     print(f"Bot ready as {bot.user}")
 
-await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Gamerzhacker"))
-
 # /ping
 @tree.command(name="ping", description="Show bot latency")
 async def ping(interaction: discord.Interaction):
