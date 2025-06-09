@@ -64,6 +64,31 @@ async def addadmin(interaction: discord.Interaction, userid: str):
         json.dump(config, f, indent=4)
     await interaction.response.send_message(f"✅ Admin updated to {userid}", ephemeral=True)
 
+# /createaccount
+@tree.command(name="createaccount", description="Create DragonCloud account (admin only)")
+@app_commands.describe(userid="Discord User ID", email="Email", password="Password")
+@admin_only()
+async def createaccount(interaction: discord.Interaction, userid: str, email: str, password: str):
+    payload = {
+        "username": userid,
+        "email": email,
+        "first_name": "Dragon",
+        "last_name": "User",
+        "password": password
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"{PANEL_URL}/api/application/users", headers=HEADERS, json=payload) as resp:
+            data = await resp.json()
+            if resp.status == 201:
+                try:
+                    user = await bot.fetch_user(int(userid))
+                    await user.send(f"✅ Your DragonCloud account has been created!\nEmail: `{email}`\nPassword: `{password}`")
+                except:
+                    pass
+                await interaction.response.send_message("✅ Account created and sent via DM.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"❌ Failed to create account: {data}", ephemeral=True)
+
 # /new
 @tree.command(name="new", description="Send a message to channel ID")
 @app_commands.describe(channel_id="Target Channel ID", message="Message to send")
