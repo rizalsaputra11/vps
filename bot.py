@@ -282,48 +282,4 @@ async def createmsg(interaction: discord.Interaction, name: str, message: str):
     save_messages(messages)
     await interaction.response.send_message(f"✅ Message `{name}` saved.", ephemeral=True)
 
-# Antinuke Config
-antinuke_data = load_json("antinuke.json")
-
-def save_antinuke():
-    save_json("antinuke.json", antinuke_data)
-
-# /antinuke enable
-@tree.command(name="antinuke_enable", description="Enable AntiNuke for this server")
-async def antinuke_enable(interaction: discord.Interaction):
-    guild_id = str(interaction.guild.id)
-    antinuke_data[guild_id] = {"enabled": True, "primis": []}
-    save_antinuke()
-    await interaction.response.send_message("🛡️ AntiNuke has been enabled for this server.", ephemeral=True)
-
-# /antinuke disable
-@tree.command(name="antinuke_disable", description="Disable AntiNuke for this server")
-async def antinuke_disable(interaction: discord.Interaction):
-    guild_id = str(interaction.guild.id)
-    antinuke_data[guild_id] = {"enabled": False, "primis": []}
-    save_antinuke()
-    await interaction.response.send_message("❌ AntiNuke has been disabled for this server.", ephemeral=True)
-
-# /antinuke add
-@tree.command(name="antinuke_add", description="Add a primis user (can bypass AntiNuke)")
-@app_commands.describe(usertag="User tag to whitelist")
-async def antinuke_add(interaction: discord.Interaction, usertag: str):
-    guild_id = str(interaction.guild.id)
-    antinuke_data.setdefault(guild_id, {"enabled": False, "primis": []})
-    antinuke_data[guild_id]["primis"].append(usertag)
-    save_antinuke()
-    await interaction.response.send_message(f"✅ `{usertag}` has been added to AntiNuke bypass list.", ephemeral=True)
-
-# /antinuke remove
-@tree.command(name="antinuke_remove", description="Remove a primis user")
-@app_commands.describe(usertag="User tag to remove")
-async def antinuke_remove(interaction: discord.Interaction, usertag: str):
-    guild_id = str(interaction.guild.id)
-    if guild_id in antinuke_data and usertag in antinuke_data[guild_id]["primis"]:
-        antinuke_data[guild_id]["primis"].remove(usertag)
-        save_antinuke()
-        await interaction.response.send_message(f"❌ `{usertag}` removed from AntiNuke bypass list.", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"⚠️ `{usertag}` not found in bypass list.", ephemeral=True)
-
 bot.run(TOKEN)
