@@ -1,171 +1,329 @@
 import discord
-from discord import app_commands
 from discord.ext import commands
+from discord import app_commands, ui, Interaction
 import json
-import requests
+import aiohttp
+import os
 
-TOKEN = "YOUR_DISCORD_BOT_TOKEN"
-PANEL_URL = "http://panel.dragoncloud.ggff.net"
-API_KEY = "ptla_9M4qmqeDpJSioG4L2ZyX5hXfi5QCFq3fOSvslNzPaZR"
+# Load config
+with open("config.json") as f:
+    config = json.load(f)
+
+TOKEN = config["token"]
+ADMIN_FILE = "admins.json"
+MSG_FILE = "messages.json"
+PANEL_URL = "https://dragoncloud.godanime.net"
+API_KEY = config["api_key"]
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
-    "Content-Type": "application/json",
-    "Accept": "Application/vnd.pterodactyl.v1+json"
+    "Content-Type": "application/json"
 }
 
 intents = discord.Intents.default()
+intents.message_content = True
 bot = commands.Bot(command_prefix="/", intents=intents)
 tree = bot.tree
 
-def load_users():
-    try:
-        with open("users.json", "r") as f:
+# Load admins
+def load_admins():
+    if os.path.exists(ADMIN_FILE):
+        with open(ADMIN_FILE) as f:
             return json.load(f)
-    except FileNotFoundError:
+    else:
+        return [str(config["admin_id"])]
+
+def save_admins(admins):
+    with open(ADMIN_FILE, "w") as f:
+        json.dump(admins, f, indent=4)
+
+admins = load_admins()
+
+# Load/save messages
+def load_messages():
+    if os.path.exists(MSG_FILE):
+        with open(MSG_FILE) as f:
+            return json.load(f)
+    else:
         return {}
 
-def save_users(users):
-    with open("users.json", "w") as f:
-        json.dump(users, f, indent=4)
+def save_messages(messages):
+    with open(MSG_FILE, "w") as f:
+        json.dump(messages, f, indent=4)
 
-def get_user_data(user_id):
-    users = load_users()
-    return users.get(str(user_id))
+messages = load_messages()
 
-@tree.command(name="register")
-@app_commands.describe(first_name="Your first name", last_name="Your last name", username="Panel username", email="Email for panel", password="Password")
-async def register(interaction: discord.Interaction, first_name: str, last_name: str, username: str, email: str, password: str):
-    await interaction.response.defer()
-    data = {
-        "username": username,
-        "email": email,
-        "first_name": first_name,
-        "last_name": last_name,
-        "password": password
-    }
-    response = requests.post(f"{PANEL_URL}/api/application/users", headers=HEADERS, json=data)
-    if response.status_code == 201:
-        user_data = response.json()
-        users = load_users()
-        users[str(interaction.user.id)] = {
-            "id": user_data["attributes"]["id"],
-            "email": email,
-            "password": password
-        }
-        save_users(users)
-        await interaction.followup.send("✅ Registered successfully. Check your DMs.")
-        await interaction.user.send(f"🎉 Registered on panel!\nEmail: {email}\nPassword: {password}")
-    else:
-        await interaction.followup.send(f"❌ Failed to register: {response.text}")
+# Check admin decorator
+def is_admin(user_id):
+    return str(user_id) in admins
 
-@tree.command(name="list")
-async def list_user(interaction: discord.Interaction):
-    await interaction.response.defer()
-    user_data = get_user_data(interaction.user.id)
-    if not user_data:
-        await interaction.followup.send("❌ You are not registered. Use /register first.")
-        return
-    await interaction.followup.send(f"📄 Your Details:\nEmail: {user_data['email']}\nPassword: {user_data['password']}\nID: {user_data['id']}")
-
-@tree.command(name="createserver")
-@app_commands.describe(name="Server name", node="Select node")
-@app_commands.choices(
-    node=[
-        app_commands.Choice(name="in2 - India", value="3"),
-        app_commands.Choice(name="in3 - India", value="5"),
-        app_commands.Choice(name="au2 - Australia", value="7")
-    ]
-)
-async def createserver(interaction: discord.Interaction, name: str, node: app_commands.Choice[str]):
-    await interaction.response.defer()
-    user_data = get_user_data(interaction.user.id)
-    if not user_data:
-        await interaction.followup.send("❌ You are not registered. Use /register first.")
-        return
-
-    check_existing = requests.get(f"{PANEL_URL}/api/application/users/{user_data['id']}/servers", headers=HEADERS)
-    if check_existing.status_code == 200 and check_existing.json()["data"]:
-        await interaction.followup.send("❌ You already have a server.")
-        return
-
-    data = {
-        "name": name,
-        "user": user_data["id"],
-        "egg": 16,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
-        "environment": {
-            "SERVER_JARFILE": "server.jar",
-            "MINECRAFT_VERSION": "latest",
-            "PAPER_VERSION": "latest"
-        },
-        "limits": {
-            "memory": 4096,
-            "swap": 0,
-            "disk": 10240,
-            "io": 500,
-            "cpu": 100
-        },
-        "feature_limits": {
-            "databases": 0,
-            "allocations": 1
-        },
-        "deploy": {
-            "locations": [int(node.value)],
-            "dedicated_ip": False,
-            "port_range": []
-        }
-    }
-
-    response = requests.post(f"{PANEL_URL}/api/application/servers", headers=HEADERS, json=data)
-    if response.status_code == 201:
-        await interaction.followup.send("✅ Server created successfully!")
-    else:
-        await interaction.followup.send(f"❌ Failed to create server: {response.text}")
-
-@tree.command(name="myserver")
-async def myserver(interaction: discord.Interaction):
-    user_data = get_user_data(interaction.user.id)
-    if not user_data:
-        await interaction.response.send_message("❌ You are not registered.")
-        return
-
-    servers = requests.get(f"{PANEL_URL}/api/application/users/{user_data['id']}/servers", headers=HEADERS).json()
-    if not servers["data"]:
-        await interaction.response.send_message("🔍 No servers found for your account.")
-        return
-
-    srv = servers["data"][0]["attributes"]
-    await interaction.response.send_message(f"📡 Your Server:\nName: {srv['name']}\nID: {srv['identifier']}\nIP: {srv['allocations'][0]['ip']}:{srv['allocations'][0]['port']}\nLimits: {srv['limits']['memory']}MB RAM, {srv['limits']['cpu']}% CPU")
-
-@tree.command(name="upgraderam")
-async def upgraderam(interaction: discord.Interaction):
-    await interaction.response.send_message("💸 To upgrade RAM by 2GB, please send: `owo pay @gamerhacker 200k` and then use `/confirmupgrade`.")
-
-@tree.command(name="confirmupgrade")
-async def confirmupgrade(interaction: discord.Interaction):
-    await interaction.response.defer()
-    user_data = get_user_data(interaction.user.id)
-    if not user_data:
-        await interaction.followup.send("❌ You are not registered. Use /register first.")
-        return
-    await interaction.followup.send("✅ Upgrade request received. Admin will verify and upgrade RAM.")
-
-@tree.command(name="ping")
-async def ping(interaction: discord.Interaction):
-    await interaction.response.send_message(f"🏓 Pong! Latency is {round(bot.latency * 1000)}ms")
-
-@tree.command(name="botinfo")
-async def botinfo(interaction: discord.Interaction):
-    await interaction.response.send_message("🤖 Bot developed by GamerHacker#0001")
-
-@tree.command(name="freeservers")
-async def freeservers(interaction: discord.Interaction):
-    await interaction.response.send_message("🆓 Use `/register` and then `/createserver` to get your free server!")
+def admin_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if not is_admin(interaction.user.id):
+            await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
+            return False
+        return True
+    return app_commands.check(predicate)
 
 @bot.event
 async def on_ready():
     await tree.sync()
-    print(f"✅ Bot is ready. Logged in as {bot.user}.")
+    print(f"Bot ready as {bot.user}")
+
+await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Gamerzhacker"))
+
+# /ping
+@tree.command(name="ping", description="Show bot latency")
+async def ping(interaction: discord.Interaction):
+    await interaction.response.send_message(f"Pong! `{round(bot.latency * 1000)}ms`")
+
+# /addadmin
+@tree.command(name="addadmin", description="Add a new admin (admin only)")
+@app_commands.describe(userid="User ID to add as admin")
+@admin_only()
+async def addadmin(interaction: discord.Interaction, userid: str):
+    global admins
+    if userid in admins:
+        await interaction.response.send_message(f"User ID `{userid}` is already an admin.", ephemeral=True)
+        return
+    admins.append(userid)
+    save_admins(admins)
+    await interaction.response.send_message(f"User ID `{userid}` added as admin.", ephemeral=True)
+
+# /createaccount
+@tree.command(name="createaccount", description="Create DragonCloud account (admin only)")
+@app_commands.describe(userid="Discord User ID", email="Email", password="Password")
+@admin_only()
+async def createaccount(interaction: discord.Interaction, userid: str, email: str, password: str):
+    payload = {
+        "username": userid,
+        "email": email,
+        "first_name": "Dragon",
+        "last_name": "User",
+        "password": password
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"{PANEL_URL}/api/application/users", headers=HEADERS, json=payload) as resp:
+            data = await resp.json()
+            if resp.status == 201:
+                try:
+                    user = await bot.fetch_user(int(userid))
+                    await user.send(f"✅ Your DragonCloud account has been created!\nEmail: `{email}`\nPassword: `{password}`")
+                except:
+                    pass
+                await interaction.response.send_message("✅ Account created and sent via DM.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"❌ Failed to create account: {data}", ephemeral=True)
+
+# /removeaccount
+@tree.command(name="removeaccount", description="Remove DragonCloud account (admin only)")
+@app_commands.describe(userid="Discord User ID")
+@admin_only()
+async def removeaccount(interaction: discord.Interaction, userid: str):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{PANEL_URL}/api/application/users", headers=HEADERS) as resp:
+            users = await resp.json()
+            for user in users.get("data", []):
+                if user["attributes"]["username"] == userid:
+                    user_id = user["attributes"]["id"]
+                    await session.delete(f"{PANEL_URL}/api/application/users/{user_id}", headers=HEADERS)
+                    await interaction.response.send_message(f"✅ User `{userid}` deleted.", ephemeral=True)
+                    return
+            await interaction.response.send_message(f"❌ User `{userid}` not found.", ephemeral=True)
+
+# /new - send msg to channel
+@tree.command(name="new", description="Send message to a channel (admin only)")
+@app_commands.describe(message="Message to send", channel_id="Channel ID to send to")
+@admin_only()
+async def new(interaction: discord.Interaction, message: str, channel_id: str):
+    channel = bot.get_channel(int(channel_id))
+    if channel:
+        await channel.send(message)
+        await interaction.response.send_message(f"Message sent to <#{channel_id}>", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Channel not found.", ephemeral=True)
+
+# Manage buttons for /manage command
+class ManageButtons(ui.View):
+    def __init__(self, userid, email, password):
+        super().__init__(timeout=300)
+        self.userid = userid
+        self.email = email
+        self.password = password
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        # Only admins can use buttons
+        if not is_admin(interaction.user.id):
+            await interaction.response.send_message("❌ Not authorized.", ephemeral=True)
+            return False
+        return True
+
+    @ui.button(label="Start", style=discord.ButtonStyle.green)
+    async def start_button(self, interaction: Interaction, button: ui.Button):
+        # Call API to start server
+        success = await control_server(self.userid, "start")
+        if success:
+            await interaction.response.send_message(f"🟢 Server `{self.userid}` started.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Failed to start server `{self.userid}`.", ephemeral=True)
+
+    @ui.button(label="Stop", style=discord.ButtonStyle.red)
+    async def stop_button(self, interaction: Interaction, button: ui.Button):
+        success = await control_server(self.userid, "stop")
+        if success:
+            await interaction.response.send_message(f"🔴 Server `{self.userid}` stopped.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Failed to stop server `{self.userid}`.", ephemeral=True)
+
+    @ui.button(label="Reinstall", style=discord.ButtonStyle.blurple)
+    async def reinstall_button(self, interaction: Interaction, button: ui.Button):
+        success = await control_server(self.userid, "reinstall")
+        if success:
+            await interaction.response.send_message(f"🔁 Server `{self.userid}` reinstalled.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Failed to reinstall server `{self.userid}`.", ephemeral=True)
+
+# Helper function to check server existence and control it via API
+async def control_server(userid: str, action: str) -> bool:
+    # 1. Find server by userid
+    # 2. Call start/stop/reinstall API
+    # 3. Return True/False based on success
+
+    async with aiohttp.ClientSession() as session:
+        # Get user servers
+        async with session.get(f"{PANEL_URL}/api/application/users", headers=HEADERS) as resp:
+            if resp.status != 200:
+                return False
+            users = await resp.json()
+            user_id = None
+            for u in users.get("data", []):
+                if u["attributes"]["username"] == userid:
+                    user_id = u["attributes"]["id"]
+                    break
+            if not user_id:
+                return False
+
+        # Get servers of this user
+        async with session.get(f"{PANEL_URL}/api/application/users/{user_id}/servers", headers=HEADERS) as resp:
+            if resp.status != 200:
+                return False
+            servers = await resp.json()
+            if not servers.get("data"):
+                return False
+            server = servers["data"][0]  # Assuming 1 server per user
+            server_id = server["attributes"]["id"]
+            server_ip = server["attributes"]["allocation"]["alias"] if server["attributes"].get("allocation") else "Unknown IP"
+
+        # Perform action
+        url = f"{PANEL_URL}/api/application/servers/{server_id}/power"
+        payload = {"signal": action}  # 'start', 'stop', 'kill', 'restart'
+        # For reinstall, call server reinstall endpoint (not in power API)
+        if action == "reinstall":
+            url = f"{PANEL_URL}/api/application/servers/{server_id}/reinstall"
+            async with session.post(url, headers=HEADERS) as resp:
+                return resp.status == 204
+
+        async with session.post(url, headers=HEADERS, json=payload) as resp:
+            return resp.status == 204 or resp.status == 202
+
+# /manage
+@tree.command(name="manage", description="Manage user server (admin only)")
+@app_commands.describe(userid="User ID", email="Email", password="Password")
+@admin_only()
+async def manage(interaction: discord.Interaction, userid: str, email: str, password: str):
+    # Check if server exists and get IP
+    async with aiohttp.ClientSession() as session:
+        # Find user id
+        async with session.get(f"{PANEL_URL}/api/application/users", headers=HEADERS) as resp:
+            if resp.status != 200:
+                await interaction.response.send_message("❌ Failed to fetch users from panel.", ephemeral=True)
+                return
+            users = await resp.json()
+            user_id = None
+            for u in users.get("data", []):
+                if u["attributes"]["username"] == userid:
+                    user_id = u["attributes"]["id"]
+                    break
+            if not user_id:
+                await interaction.response.send_message(f"❌ User `{userid}` not found.", ephemeral=True)
+                return
+
+        # Get servers of this user
+        async with session.get(f"{PANEL_URL}/api/application/users/{user_id}/servers", headers=HEADERS) as resp:
+            if resp.status != 200:
+                await interaction.response.send_message(f"❌ Failed to fetch servers of user `{userid}`.", ephemeral=True)
+                return
+            servers = await resp.json()
+            if not servers.get("data"):
+                await interaction.response.send_message(f"❌ User `{userid}` has no servers.", ephemeral=True)
+                return
+            server = servers["data"][0]
+            server_ip = server["attributes"]["allocation"]["alias"] if server["attributes"].get("allocation") else "Unknown IP"
+
+    embed = discord.Embed(title=f"Manage Server: {userid}", color=discord.Color.green())
+    embed.add_field(name="🟢 Start", value="Click the button to start server", inline=True)
+    embed.add_field(name="🔴 Stop", value="Click the button to stop server", inline=True)
+    embed.add_field(name="🔁 Reinstall", value="Click the button to reinstall server", inline=True)
+    embed.add_field(name="🌐 Server IP", value=server_ip, inline=False)
+
+    view = ManageButtons(userid, email, password)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+# /botinfo
+@tree.command(name="botinfo", description="Show bot info")
+async def botinfo(interaction: discord.Interaction):
+    await interaction.response.send_message("🤖 Bot made by Gamerzhacker")
+
+# /createmsg
+@tree.command(name="createmsg", description="Create a named message (admin only)")
+@app_commands.describe(name="Message name", message="Message content")
+@admin_only()
+async def createmsg(interaction: discord.Interaction, name: str, message: str):
+    messages[name] = message
+    save_messages(messages)
+    await interaction.response.send_message(f"✅ Message `{name}` saved.", ephemeral=True)
+
+# Antinuke Config
+antinuke_data = load_json("antinuke.json")
+
+def save_antinuke():
+    save_json("antinuke.json", antinuke_data)
+
+# /antinuke enable
+@tree.command(name="antinuke_enable", description="Enable AntiNuke for this server")
+async def antinuke_enable(interaction: discord.Interaction):
+    guild_id = str(interaction.guild.id)
+    antinuke_data[guild_id] = {"enabled": True, "primis": []}
+    save_antinuke()
+    await interaction.response.send_message("🛡️ AntiNuke has been enabled for this server.", ephemeral=True)
+
+# /antinuke disable
+@tree.command(name="antinuke_disable", description="Disable AntiNuke for this server")
+async def antinuke_disable(interaction: discord.Interaction):
+    guild_id = str(interaction.guild.id)
+    antinuke_data[guild_id] = {"enabled": False, "primis": []}
+    save_antinuke()
+    await interaction.response.send_message("❌ AntiNuke has been disabled for this server.", ephemeral=True)
+
+# /antinuke add
+@tree.command(name="antinuke_add", description="Add a primis user (can bypass AntiNuke)")
+@app_commands.describe(usertag="User tag to whitelist")
+async def antinuke_add(interaction: discord.Interaction, usertag: str):
+    guild_id = str(interaction.guild.id)
+    antinuke_data.setdefault(guild_id, {"enabled": False, "primis": []})
+    antinuke_data[guild_id]["primis"].append(usertag)
+    save_antinuke()
+    await interaction.response.send_message(f"✅ `{usertag}` has been added to AntiNuke bypass list.", ephemeral=True)
+
+# /antinuke remove
+@tree.command(name="antinuke_remove", description="Remove a primis user")
+@app_commands.describe(usertag="User tag to remove")
+async def antinuke_remove(interaction: discord.Interaction, usertag: str):
+    guild_id = str(interaction.guild.id)
+    if guild_id in antinuke_data and usertag in antinuke_data[guild_id]["primis"]:
+        antinuke_data[guild_id]["primis"].remove(usertag)
+        save_antinuke()
+        await interaction.response.send_message(f"❌ `{usertag}` removed from AntiNuke bypass list.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"⚠️ `{usertag}` not found in bypass list.", ephemeral=True)
 
 bot.run(TOKEN)
