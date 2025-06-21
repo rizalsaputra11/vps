@@ -48,12 +48,12 @@ def is_admin(user):
 # /ping
 @tree.command(name="ping", description="Bot ping")
 async def ping(interaction: discord.Interaction):
-    await interaction.response.send_message(f"🏓 Pong: {round(bot.latency * 1000)}ms")
+    await interaction.response.send_message(f"🎉 Pong: {round(bot.latency * 1000)}ms")
 
 # /botinfo
 @tree.command(name="botinfo")
 async def botinfo(interaction: discord.Interaction):
-    await interaction.response.send_message("🤖 Made by Gamerzhacker")
+    await interaction.response.send_message(",**⚡ Made by Gamerzhacker,**")
 
 # /addadmin
 @tree.command(name="addadmin")
