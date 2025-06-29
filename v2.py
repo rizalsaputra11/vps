@@ -17,6 +17,7 @@ TOKEN = ""
 ADMIN_ID = "1159037240622723092"
 PANEL_URL = "https://dragoncloud.godanime.net"
 API_KEY = ""
+ADMIN_IDS = "1159037240622723092"
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
 intents = discord.Intents.all()
@@ -261,6 +262,132 @@ async def create_vps(interaction: discord.Interaction, userid: str, amount: int)
         return await interaction.response.send_message("❌ Unauthorized", ephemeral=True)
     view = VPSView(interaction, userid, amount)
     await interaction.response.send_message("📦 Select VPS connection type:", view=view, ephemeral=True)
+
+
+# -------------------- OWNLIST --------------------
+@bot.tree.command(name="ownlist", description="Generate random Minecraft server IDs for a user (admin only)")
+@app_commands.describe(userid="User's Discord ID")
+async def ownlist(interaction: discord.Interaction, userid: str):
+    if str(interaction.user.id) not in ADMIN_IDS:
+        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
+        return
+
+    servers = [f"{random.randint(100000, 999999)}_IN" for _ in range(3)]
+
+    if not os.path.exists(data_file):
+        with open(data_file, "w") as f:
+            json.dump({}, f)
+
+    with open(data_file, "r") as f:
+        data = json.load(f)
+    data[userid] = servers
+    with open(data_file, "w") as f:
+        json.dump(data, f)
+
+    await interaction.response.send_message(f"✅ Created server list for `{userid}`:\n" + "\n".join(servers), ephemeral=True)
+
+# -------------------- LIST --------------------
+@bot.tree.command(name="list", description="List Minecraft servers of a user from /ownlist")
+@app_commands.describe(userid="User's Discord ID")
+async def list_servers(interaction: discord.Interaction, userid: str):
+    try:
+        with open(data_file, "r") as f:
+            data = json.load(f)
+        servers = data.get(userid)
+        if not servers:
+            await interaction.response.send_message("❌ No servers found for this user.", ephemeral=True)
+            return
+        msg = f"📋 Servers owned by `{userid}`:\n" + "\n".join(f"- `{s}`" for s in servers)
+        await interaction.response.send_message(msg, ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"⚠️ Error reading list: {e}", ephemeral=True)
+
+# -------------------- UPGRADEMC --------------------
+@bot.tree.command(name="upgrademc", description="Upgrade RAM/CPU/Disk of a Minecraft server")
+@app_commands.describe(userid="User ID", serverid="Server ID", ram="RAM (MB, e.g., 12288)", cpu="CPU % (e.g., 100)", disk="Disk (MB, e.g., 20480)")
+async def upgrademc(interaction: discord.Interaction, userid: str, serverid: str, ram: int, cpu: int, disk: int):
+    if str(interaction.user.id) not in ADMIN_IDS:
+        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    internal_id = await get_server_internal_id(serverid)
+    if not internal_id:
+        await interaction.followup.send(f"❌ Server `{serverid}` not found.")
+        return
+
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+    url = f"https://dragoncloud.godanime.net/api/application/servers/{internal_id}/build"
+
+    payload = {
+        "allocation": None,
+        "memory": ram,
+        "swap": 0,
+        "disk": disk,
+        "io": 500,
+        "cpu": cpu,
+        "threads": None,
+        "feature_limits": {
+            "databases": 5,
+            "allocations": 5,
+            "backups": 5
+        }
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.patch(url, headers=headers, json=payload) as resp:
+            if resp.status == 200:
+                await interaction.followup.send(f"✅ Server `{serverid}` upgraded!\nRAM: `{ram}MB`, CPU: `{cpu}%`, Disk: `{disk}MB`")
+            else:
+                text = await resp.text()
+                await interaction.followup.send(f"❌ Upgrade failed: `{resp.status}`\n{text}")
+
+# -------------------- HELPERS --------------------
+async def get_panel_cookies(email, password):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://dragoncloud.godanime.net/auth/login", data={
+                "email": email,
+                "password": password
+            }) as resp:
+                if resp.status in [200, 302]:
+                    return session.cookie_jar.filter_cookies("https://dragoncloud.godanime.net")
+    except:
+        pass
+    return None
+
+async def get_minecraft_servers(cookies, userid):
+    headers = {'Accept': 'application/json'}
+    try:
+        async with aiohttp.ClientSession(cookies=cookies) as session:
+            async with session.get("https://dragoncloud.godanime.net/api/client", headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return [s for s in data['data'] if str(s['attributes']['user']) == str(userid)]
+    except:
+        pass
+    return []
+
+async def get_server_internal_id(external_identifier):
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Accept": "application/json"
+    }
+    url = "https://dragoncloud.godanime.net/api/application/servers"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                for server in data["data"]:
+                    if server["attributes"]["identifier"] == external_identifier:
+                        return server["attributes"]["id"]
+    return None
 
 
 bot.run(TOKEN)
