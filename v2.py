@@ -16,9 +16,9 @@ with open("config.json") as f:
 TOKEN = ""
 ADMIN_ID = "1159037240622723092"
 PANEL_URL = "https://dragoncloud.godanime.net"
-API_KEY = ""
+PANEL_API_KEY = ""
 ADMIN_IDS = "1159037240622723092"
-HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+HEADERS = {"Authorization": f"Bearer {PANEL_API_KEY}", "Content-Type": "application/json"}
 EGG_ID = 1  # Replace with your Minecraft (Paper) egg ID
 NODE_ID = 1  # Replace with your default node ID
 
