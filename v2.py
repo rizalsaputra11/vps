@@ -451,5 +451,76 @@ async def get_server_internal_id(external_id):
                     if s['attributes']['identifier'] == external_id:
                         return s['attributes']['id']
     return None
-    
+
+# -------------------- MANAGE + BUTTONS --------------------
+class ServerControlView(discord.ui.View):
+    def __init__(self, token: str, serverid: str):
+        super().__init__(timeout=None)
+        self.token = token
+        self.serverid = serverid
+
+    async def send_power_signal(self, interaction: discord.Interaction, signal: str):
+        url = f"https://dragoncloud.godanime.net/api/client/servers/{self.serverid}/power"
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json", "Content-Type": "application/json"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json={"signal": signal}) as resp:
+                if resp.status == 204:
+                    await interaction.response.send_message(f"✅ `{signal}` sent to `{self.serverid}`.", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Failed to send `{signal}`. Status: {resp.status}", ephemeral=True)
+
+    @discord.ui.button(label="Start", style=discord.ButtonStyle.success)
+    async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.send_power_signal(interaction, "start")
+
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger)
+    async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.send_power_signal(interaction, "stop")
+
+    @discord.ui.button(label="Restart", style=discord.ButtonStyle.primary)
+    async def restart_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.send_power_signal(interaction, "restart")
+
+    @discord.ui.button(label="Reinstall", style=discord.ButtonStyle.secondary)
+    async def reinstall_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.send_power_signal(interaction, "reinstall")
+
+@bot.tree.command(name="manage", description="Show Minecraft servers with token and control buttons")
+@app_commands.describe(token="Your Pterodactyl Client API Token")
+async def manage(interaction: discord.Interaction, token: str):
+    await interaction.response.defer(ephemeral=True)
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://dragoncloud.godanime.net/api/client", headers=headers) as resp:
+            if resp.status != 200:
+                await interaction.followup.send("❌ Invalid token.")
+                return
+            data = await resp.json()
+
+    servers = data.get("data", [])
+    if not servers:
+        await interaction.followup.send("❌ No servers found.", ephemeral=True)
+        return
+
+    for server in servers:
+        sid = server['attributes']['identifier']
+        name = server['attributes']['name']
+        embed = discord.Embed(title=f"🎮 {name} ({sid})", color=discord.Color.blurple())
+        embed.add_field(name="Controls", value="Start / Stop / Restart / Reinstall", inline=False)
+        await interaction.followup.send(embed=embed, view=ServerControlView(token, sid), ephemeral=True)
+
+# -------------------- GET SERVER INTERNAL ID --------------------
+async def get_server_internal_id(identifier):
+    url = "https://dragoncloud.godanime.net/api/application/servers"
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            for s in data.get("data", []):
+                if s['attributes']['identifier'] == identifier:
+                    return s['attributes']['id']
+    return None
+
 bot.run(TOKEN)
