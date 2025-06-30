@@ -264,7 +264,22 @@ async def create_vps(interaction: discord.Interaction, userid: str, amount: int)
         return await interaction.response.send_message("❌ Unauthorized", ephemeral=True)
     view = VPSView(interaction, userid, amount)
     await interaction.response.send_message("📦 Select VPS connection type:", view=view, ephemeral=True)
-
+# -------------------- HELP --------------------
+@bot.tree.command(name="help", description="Show list of available commands")
+async def help_command(interaction: discord.Interaction):
+    embed = discord.Embed(title="📘 Command List", color=discord.Color.green())
+    embed.add_field(name="/ownlist <userid>", value="🔒 Admin only: Generate server list for a user.", inline=False)
+    embed.add_field(name="/list <userid>", value="📋 Show servers owned by a user.", inline=False)
+    embed.add_field(name="/deleteownlist <userid>", value="🗑️ Admin only: Delete stored server list for a user.", inline=False)
+    embed.add_field(name="/upgrademc <serverid> <ram> <cpu> <disk>", value="⚙️ Admin only: Upgrade server specs.", inline=False)
+    embed.add_field(name="/manage <token>", value="🎮 View & control Minecraft servers (client token)", inline=False)
+    embed.add_field(name="/getip <token> <serverid>", value="🌐 Get server IP address (client t
+    embed.add_field(name="/register <userid> <username> <email> <password>", value="🧾 Create panel account.", inline=False)
+    embed.add_field(name="/ac <userid> <email> <pass>", value="⚡ Quick account creation.", inline=False)
+    embed.add_field(name="/createfree <servername> <email>", value="🚀 Create 4GB Minecraft server.", inline=False)
+    embed.add_field(name="/creates", value="📦 Show plan selection (invite/boost).", inline=False)
+    embed.add_field(name="/removeall <userid>", value="🗑 Remove all Minecraft servers.", inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # -------------------- OWNLIST --------------------
 @bot.tree.command(name="ownlist", description="Generate random Minecraft server IDs for a user (admin only)")
