@@ -19,6 +19,8 @@ PANEL_URL = "https://dragoncloud.godanime.net"
 API_KEY = ""
 ADMIN_IDS = "1159037240622723092"
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+EGG_ID = 1  # Replace with your Minecraft (Paper) egg ID
+NODE_ID = 1  # Replace with your default node ID
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="/", intents=intents)
@@ -302,92 +304,152 @@ async def list_servers(interaction: discord.Interaction, userid: str):
     except Exception as e:
         await interaction.response.send_message(f"⚠️ Error reading list: {e}", ephemeral=True)
 
-# -------------------- UPGRADEMC --------------------
-@bot.tree.command(name="upgrademc", description="Upgrade RAM/CPU/Disk of a Minecraft server")
-@app_commands.describe(userid="User ID", serverid="Server ID", ram="RAM (MB, e.g., 12288)", cpu="CPU % (e.g., 100)", disk="Disk (MB, e.g., 20480)")
-async def upgrademc(interaction: discord.Interaction, userid: str, serverid: str, ram: int, cpu: int, disk: int):
+# -------------------- REGISTER --------------------
+@bot.tree.command(name="register", description="Register a new panel account")
+@app_commands.describe(userid="User ID", username="Username", email="Email", password="Password")
+async def register(interaction: discord.Interaction, userid: str, username: str, email: str, password: str):
     if str(interaction.user.id) not in ADMIN_IDS:
-        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
+        await interaction.response.send_message("❌ Unauthorized", ephemeral=True)
         return
-
-    await interaction.response.defer(ephemeral=True)
-
-    internal_id = await get_server_internal_id(serverid)
-    if not internal_id:
-        await interaction.followup.send(f"❌ Server `{serverid}` not found.")
-        return
-
+    payload = {
+        "username": username,
+        "email": email,
+        "first_name": username,
+        "last_name": "user",
+        "password": password
+    }
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {PANEL_API_KEY}",
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
-
-    url = f"https://dragoncloud.godanime.net/api/application/servers/{internal_id}/build"
-
-    payload = {
-        "allocation": None,
-        "memory": ram,
-        "swap": 0,
-        "disk": disk,
-        "io": 500,
-        "cpu": cpu,
-        "threads": None,
-        "feature_limits": {
-            "databases": 5,
-            "allocations": 5,
-            "backups": 5
-        }
-    }
-
     async with aiohttp.ClientSession() as session:
-        async with session.patch(url, headers=headers, json=payload) as resp:
-            if resp.status == 200:
-                await interaction.followup.send(f"✅ Server `{serverid}` upgraded!\nRAM: `{ram}MB`, CPU: `{cpu}%`, Disk: `{disk}MB`")
+        async with session.post(f"{PANEL_URL}/api/application/users", headers=headers, json=payload) as resp:
+            if resp.status == 201:
+                await interaction.response.send_message("✅ Account created successfully.", ephemeral=True)
             else:
                 text = await resp.text()
-                await interaction.followup.send(f"❌ Upgrade failed: `{resp.status}`\n{text}")
+                await interaction.response.send_message(f"❌ Failed: {resp.status} {text}", ephemeral=True)
 
-# -------------------- HELPERS --------------------
-async def get_panel_cookies(email, password):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post("https://dragoncloud.godanime.net/auth/login", data={
-                "email": email,
-                "password": password
-            }) as resp:
-                if resp.status in [200, 302]:
-                    return session.cookie_jar.filter_cookies("https://dragoncloud.godanime.net")
-    except:
-        pass
-    return None
-
-async def get_minecraft_servers(cookies, userid):
-    headers = {'Accept': 'application/json'}
-    try:
-        async with aiohttp.ClientSession(cookies=cookies) as session:
-            async with session.get("https://dragoncloud.godanime.net/api/client", headers=headers) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return [s for s in data['data'] if str(s['attributes']['user']) == str(userid)]
-    except:
-        pass
-    return []
-
-async def get_server_internal_id(external_identifier):
+# -------------------- CREATEFREE --------------------
+@bot.tree.command(name="createfree", description="Create default 4GB server")
+@app_commands.describe(servername="Name", email="Email")
+async def createfree(interaction: discord.Interaction, servername: str, email: str):
+    await interaction.response.defer(ephemeral=True)
+    name = f"mc-{random.randint(1000, 9999)}"
+    payload = {
+        "name": servername,
+        "user": 1,  # Set user ID manually or from email
+        "egg": EGG_ID,
+        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",  # Adjust if needed
+        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
+        "limits": {
+            "memory": 4096,
+            "swap": 0,
+            "disk": 10240,
+            "io": 500,
+            "cpu": 100
+        },
+        "feature_limits": {"databases": 1, "backups": 1, "allocations": 1},
+        "environment": {
+            "SERVER_JARFILE": "server.jar",
+            "DL_PATH": "https://api.papermc.io/v2/projects/paper/versions/1.20.1/builds/123/downloads/paper-1.20.1-123.jar",
+            "SERVER_PORT": "25565"
+        },
+        "allocation": {
+            "default": 1  # Replace with real allocation ID
+        },
+        "deploy": {
+            "locations": [NODE_ID],
+            "dedicated_ip": False,
+            "port_range": []
+        },
+        "start_on_completion": True
+    }
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {PANEL_API_KEY}",
+        "Content-Type": "application/json",
         "Accept": "application/json"
     }
-    url = "https://dragoncloud.godanime.net/api/application/servers"
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"{PANEL_URL}/api/application/servers", headers=headers, json=payload) as resp:
+            if resp.status == 201:
+                await interaction.followup.send("✅ Successfully created your server. Check panel!", ephemeral=True)
+            else:
+                text = await resp.text()
+                await interaction.followup.send(f"❌ Failed: {resp.status}\n{text}", ephemeral=True)
+
+# -------------------- AC --------------------
+@bot.tree.command(name="ac", description="Quick account creation")
+@app_commands.describe(userid="User ID", email="Email", passw="Password")
+async def ac(interaction: discord.Interaction, userid: str, email: str, passw: str):
+    username = f"user{random.randint(1000,9999)}"
+    await register(interaction, userid, username, email, passw)
+
+# -------------------- REMOVEALL --------------------
+@bot.tree.command(name="removeall", description="Remove all Minecraft servers by user ID")
+@app_commands.describe(userid="User ID")
+async def removeall(interaction: discord.Interaction, userid: str):
+    if str(interaction.user.id) not in ADMIN_IDS:
+        await interaction.response.send_message("❌ Unauthorized", ephemeral=True)
+        return
+    url = f"{PANEL_URL}/api/application/servers"
+    headers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Accept": "application/json"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             if resp.status == 200:
                 data = await resp.json()
-                for server in data["data"]:
-                    if server["attributes"]["identifier"] == external_identifier:
-                        return server["attributes"]["id"]
+                servers = [s for s in data['data'] if str(s['attributes']['user']) == str(userid)]
+                count = 0
+                for s in servers:
+                    sid = s['attributes']['id']
+                    await session.delete(f"{url}/{sid}", headers=headers)
+                    count += 1
+                await interaction.response.send_message(f"✅ Removed {count} servers.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"❌ Error fetching server list.", ephemeral=True)
+
+# -------------------- UPGRADEMC --------------------
+@bot.tree.command(name="upgrademc", description="Upgrade Minecraft server specs")
+@app_commands.describe(serverid="External Server ID", ram="RAM (MB)", cpu="CPU %", disk="Disk (MB)")
+async def upgrademc(interaction: discord.Interaction, serverid: str, ram: int, cpu: int, disk: int):
+    if str(interaction.user.id) not in ADMIN_IDS:
+        await interaction.response.send_message("❌ Unauthorized", ephemeral=True)
+        return
+    await interaction.response.defer(ephemeral=True)
+    sid = await get_server_internal_id(serverid)
+    if not sid:
+        await interaction.followup.send("❌ Server ID not found.")
+        return
+    url = f"{PANEL_URL}/api/application/servers/{sid}/build"
+    payload = {
+        "memory": ram,
+        "disk": disk,
+        "cpu": cpu,
+        "io": 500,
+        "swap": 0,
+        "feature_limits": {"databases": 5, "backups": 5, "allocations": 5}
+    }
+    headers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Content-Type": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.patch(url, headers=headers, json=payload) as resp:
+            if resp.status == 200:
+                await interaction.followup.send("✅ Upgrade successful.", ephemeral=True)
+            else:
+                text = await resp.text()
+                await interaction.followup.send(f"❌ Failed: {resp.status}\n{text}", ephemeral=True)
+
+# -------------------- GET SERVER INTERNAL ID --------------------
+async def get_server_internal_id(external_id):
+    url = f"{PANEL_URL}/api/application/servers"
+    headers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Accept": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                for s in data['data']:
+                    if s['attributes']['identifier'] == external_id:
+                        return s['attributes']['id']
     return None
-
-
+    
 bot.run(TOKEN)
