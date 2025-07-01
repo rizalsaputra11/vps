@@ -37,6 +37,9 @@ def save_json(file, data):
 
 users_data = load_json("users.json")
 codes_data = load_json("codes.json")
+giveaways_file = "giveaways.json"
+accountapi_file = "accountapi.json"
+account_data = load_json("account.json")
 
 @bot.event
 async def on_ready():
@@ -319,12 +322,6 @@ async def createfree(interaction: discord.Interaction, servername: str, email: s
                 text = await resp.text()
                 await interaction.followup.send(f"❌ Failed: {resp.status}\n{text}", ephemeral=True)
 
-# -------------------- AC --------------------
-@bot.tree.command(name="ac", description="Quick account creation")
-@app_commands.describe(userid="User ID", email="Email", passw="Password")
-async def ac(interaction: discord.Interaction, userid: str, email: str, passw: str):
-    username = f"user{random.randint(1000,9999)}"
-    await register(interaction, userid, username, email, passw)
 
 # -------------------- REMOVEALL --------------------
 @bot.tree.command(name="removeall", description="Remove all Minecraft servers by user ID")
@@ -545,4 +542,131 @@ async def accountapi(interaction: discord.Interaction, userid: str, api: str, na
     if user:
         await user.send(f"📂 API Stored\n🔑 Key: `{api}`\n📛 Name: `{name}`\n📝 Message: {msg}")
 
+# -------------------- Helper to get panel user ID --------------------
+async def get_panel_user_id_by_email(email):
+    headers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Accept": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{PANEL_URL}/api/application/users", headers=headers) as resp:
+            if resp.status == 200:
+                users = await resp.json()
+                for u in users["data"]:
+                    if u["attributes"]["email"].lower() == email.lower():
+                        return u["attributes"]["id"]
+    return None
+
+# -------------------- /ac COMMAND (store account info) --------------------
+@bot.tree.command(name="ac", description="🔑 Store user account info")
+@app_commands.describe(userid="User ID", email="Panel email", password="Password")
+async def ac(interaction: discord.Interaction, userid: str, email: str, password: str):
+    accounts = {}
+    if os.path.exists(account_data_file):
+        with open(account_data_file, "r") as f:
+            accounts = json.load(f)
+
+    accounts[userid] = {"email": email, "password": password}
+
+    with open(account_data_file, "w") as f:
+        json.dump(accounts, f)
+
+    await interaction.response.send_message("✅ Account info saved for user.", ephemeral=True)
+
+# -------------------- /creates COMMAND --------------------
+@bot.tree.command(name="creates", description="🎮 Create Minecraft server using Boost or Invite plan")
+async def creates(interaction: discord.Interaction):
+    class PlanSelect(discord.ui.Select):
+        def __init__(self):
+            options = [
+                discord.SelectOption(label="2x Boost", description="12GB RAM, 4 CPU, 100GB Disk", value="boost2"),
+                discord.SelectOption(label="4x Boost", description="24GB RAM, 6 CPU, 150GB Disk", value="boost4"),
+                discord.SelectOption(label="6x Boost", description="32GB RAM, 8 CPU, 200GB Disk", value="boost6"),
+                discord.SelectOption(label="2 Invite", description="4GB RAM, 100% CPU, 10GB Disk", value="inv2"),
+                discord.SelectOption(label="4 Invite", description="6GB RAM, 150% CPU, 20GB Disk", value="inv4"),
+                discord.SelectOption(label="7 Invite", description="8GB RAM, 260% CPU, 35GB Disk", value="inv7"),
+                discord.SelectOption(label="10 Invite", description="12GB RAM, 290% CPU, 30GB Disk", value="inv10"),
+                discord.SelectOption(label="14 Invite", description="16GB RAM, 300% CPU, 40GB Disk", value="inv14"),
+            ]
+            super().__init__(placeholder="Select your plan", options=options, min_values=1, max_values=1)
+
+        async def callback(self, interaction2: discord.Interaction):
+            discord_id = str(interaction.user.id)
+            if not os.path.exists(account_data_file):
+                await interaction2.response.send_message("❌ No account found. Use /ac first.", ephemeral=True)
+                return
+
+            with open(account_data_file, "r") as f:
+                acc_data = json.load(f)
+
+            if discord_id not in acc_data:
+                await interaction2.response.send_message("❌ You must register using `/ac` before creating a server.", ephemeral=True)
+                return
+
+            email = acc_data[discord_id]["email"]
+            panel_user_id = await get_panel_user_id_by_email(email)
+            if not panel_user_id:
+                await interaction2.response.send_message("❌ Panel user not found.", ephemeral=True)
+                return
+
+            value = self.values[0]
+            plans = {
+                "boost2": {"ram": 12288, "cpu": 400, "disk": 100000},
+                "boost4": {"ram": 24576, "cpu": 600, "disk": 150000},
+                "boost6": {"ram": 32768, "cpu": 800, "disk": 200000},
+                "inv2": {"ram": 4096, "cpu": 100, "disk": 10000},
+                "inv4": {"ram": 6144, "cpu": 150, "disk": 20000},
+                "inv7": {"ram": 8192, "cpu": 260, "disk": 35000},
+                "inv10": {"ram": 12288, "cpu": 290, "disk": 30000},
+                "inv14": {"ram": 16384, "cpu": 300, "disk": 40000}
+            }
+            config = plans[value]
+            server_name = f"Dragon_{random.randint(1000,9999)}"
+
+            payload = {
+                "name": server_name,
+                "user": panel_user_id,
+                "egg": PANEL_APP_ID,
+                "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
+                "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
+                "limits": {
+                    "memory": config['ram'],
+                    "swap": 0,
+                    "disk": config['disk'],
+                    "io": 500,
+                    "cpu": config['cpu']
+                },
+                "feature_limits": {"databases": 1, "backups": 1, "allocations": 1},
+                "environment": {
+                    "DL_VERSION": "latest",
+                    "SERVER_JARFILE": "server.jar",
+                    "BUILD_NUMBER": "latest",
+                    "STARTUP": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar"
+                },
+                "allocation": {"default": 1},
+                "deploy": {"locations": [NODE_ID], "dedicated_ip": False, "port_range": []},
+                "start_on_completion": True
+            }
+
+            headers = {
+                "Authorization": f"Bearer {PANEL_API_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+
+            await interaction2.response.send_message("🛠️ Creating your server... Please wait...", ephemeral=True)
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{PANEL_URL}/api/application/servers", json=payload, headers=headers) as resp:
+                    if resp.status in [200, 201]:
+                        await interaction.user.send(f"🎉 **Minecraft Server Created Successfully!**\n\n📛 **Name**: `{server_name}`\n📊 **RAM**: `{config['ram']//1024}GB`\n🧠 **CPU**: `{config['cpu']}%`\n💾 **Disk**: `{config['disk']//1000}GB`\n🌐 [Panel Link]({PANEL_URL})")
+                        await interaction.followup.send("✅ Server created and details sent via DM!", ephemeral=True)
+                    else:
+                        error = await resp.text()
+                        await interaction.followup.send(f"❌ Failed to create server.\n``{error}``", ephemeral=True)
+
+    class PlanView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=60)
+            self.add_item(PlanSelect())
+
+    await interaction.response.send_message("📦 Please select a plan: (Boost or Invite)", view=PlanView(), ephemeral=True)
+    
 bot.run(TOKEN)
