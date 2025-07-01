@@ -22,6 +22,8 @@ ADMIN_IDS = "1159037240622723092"
 HEADERS = {"Authorization": f"Bearer {PANEL_API_KEY}", "Content-Type": "application/json"}
 EGG_ID = 1  # Replace with your Minecraft (Paper) egg ID
 NODE_ID = 1  # Replace with your default node ID
+PANEL_APP_ID = "1"  # Replace with Minecraft egg ID
+NODE_ID = 1 # Replace with 1 node ID
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="/", intents=intents)
@@ -39,7 +41,7 @@ users_data = load_json("users.json")
 codes_data = load_json("codes.json")
 giveaways_file = "giveaways.json"
 accountapi_file = "accountapi.json"
-account_data = load_json("account.json")
+account_data_file = "accounts.json"
 
 @bot.event
 async def on_ready():
