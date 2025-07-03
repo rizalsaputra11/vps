@@ -42,6 +42,7 @@ codes_data = load_json("codes.json")
 giveaways_file = "giveaways.json"
 accountapi_file = "accountapi.json"
 account_data_file = "accounts.json"
+status_channel_file = 'status_channel.txt'
 
 @bot.event
 async def on_ready():
@@ -670,5 +671,75 @@ async def creates(interaction: discord.Interaction):
             self.add_item(PlanSelect())
 
     await interaction.response.send_message("📦 Please select a plan: (Boost or Invite)", view=PlanView(), ephemeral=True)
-    
+
+    # -------------------- /setupstatus --------------------
+@bot.tree.command(name="setupstatus", description="Set channel to post panel node status updates")
+@app_commands.describe(channelid="Channel ID to post updates")
+async def setupstatus(interaction: discord.Interaction, channelid: str):
+    if str(interaction.user.id) not in ADMIN_IDS:
+        await interaction.response.send_message("❌ Only admin can use this command.", ephemeral=True)
+        return
+    with open(status_channel_file, "w") as f:
+        f.write(channelid)
+    await interaction.response.send_message(f"✅ Status updates will be posted in <#{channelid}>", ephemeral=True)
+
+# -------------------- /nodes --------------------
+@bot.tree.command(name="nodes", description="📊 Show panel node stats")
+async def nodes(interaction: discord.Interaction):
+    headers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Accept": "application/json"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{PANEL_URL}/api/application/nodes/{NODE_ID}/allocations", headers=headers) as resp1,
+                   session.get(f"{PANEL_URL}/api/application/nodes/{NODE_ID}", headers=headers) as resp2:
+            if resp1.status == 200 and resp2.status == 200:
+                allocs = await resp1.json()
+                node = await resp2.json()
+
+                name = node['attributes']['name']
+                mem = node['attributes']['memory']
+                disk = node['attributes']['disk']
+                used_mem = node['attributes']['allocated_resources']['memory']
+                used_disk = node['attributes']['allocated_resources']['disk']
+
+                embed = discord.Embed(title=f"🧠 Node: {name} Status", color=0x00ff00)
+                embed.add_field(name="Memory", value=f"{used_mem}/{mem} MB", inline=True)
+                embed.add_field(name="Disk", value=f"{used_disk}/{disk} MB", inline=True)
+                embed.set_footer(text="DragonCloud Panel Node Monitor")
+
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.response.send_message("❌ Failed to fetch node status.", ephemeral=True)
+
+# Background task (if you want auto-posting every X mins)
+@tasks.loop(minutes=10)
+async def post_status_update():
+    if not os.path.exists(status_channel_file):
+        return
+    with open(status_channel_file, "r") as f:
+        channel_id = f.read().strip()
+    try:
+        channel = bot.get_channel(int(channel_id))
+        if channel is None:
+            return
+        headers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Accept": "application/json"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{PANEL_URL}/api/application/nodes/{NODE_ID}", headers=headers) as resp:
+                if resp.status == 200:
+                    node = await resp.json()
+                    name = node['attributes']['name']
+                    mem = node['attributes']['memory']
+                    disk = node['attributes']['disk']
+                    used_mem = node['attributes']['allocated_resources']['memory']
+                    used_disk = node['attributes']['allocated_resources']['disk']
+
+                    embed = discord.Embed(title=f"🧠 Node: {name} Status", color=0x3498db)
+                    embed.add_field(name="Memory", value=f"{used_mem}/{mem} MB", inline=True)
+                    embed.add_field(name="Disk", value=f"{used_disk}/{disk} MB", inline=True)
+                    embed.timestamp = datetime.utcnow()
+
+                    await channel.send(embed=embed)
+    except Exception as e:
+        print(f"Status update error: {e}")
+
+post_status_update.start()
+
 bot.run(TOKEN)
