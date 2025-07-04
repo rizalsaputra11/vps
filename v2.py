@@ -204,7 +204,6 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(name="/deleteownlist <userid>", value="🗑️ Admin only: Delete stored server list for a user.", inline=False)
     embed.add_field(name="/upgrademc <serverid> <ram> <cpu> <disk>", value="⚙️ Admin only: Upgrade server specs.", inline=False)
     embed.add_field(name="/manage <token>", value="🎮 View & control Minecraft servers (client token)", inline=False)
-    embed.add_field(name="/getip <token> <serverid>", value="🌐 Get server IP address (client t
     embed.add_field(name="/register <userid> <username> <email> <password>", value="🧾 Create panel account.", inline=False)
     embed.add_field(name="/ac <userid> <email> <pass>", value="⚡ Quick account creation.", inline=False)
     embed.add_field(name="/createfree <servername> <email>", value="🚀 Create 4GB Minecraft server.", inline=False)
