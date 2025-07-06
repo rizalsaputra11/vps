@@ -277,53 +277,57 @@ async def register(interaction: discord.Interaction, userid: str, username: str,
                 await interaction.response.send_message(f"❌ Failed: {resp.status} {text}", ephemeral=True)
 
 # -------------------- CREATEFREE --------------------
-@bot.tree.command(name="createfree", description="Create default 4GB server")
-@app_commands.describe(servername="Name", email="Email")
+@bot.tree.command(name="createfree", description="🎮 Create Free Minecraft Server")
+@app_commands.describe(servername="Your server name", email="Your panel email")
 async def createfree(interaction: discord.Interaction, servername: str, email: str):
-    await interaction.response.defer(ephemeral=True)
-    name = f"mc-{random.randint(1000, 9999)}"
-    payload = {
-        "name": servername,
-        "user": 1,  # Set user ID manually or from email
-        "egg": EGG_ID,
-        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",  # Adjust if needed
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
-        "limits": {
-            "memory": 4096,
-            "swap": 0,
-            "disk": 10240,
-            "io": 500,
-            "cpu": 100
-        },
-        "feature_limits": {"databases": 1, "backups": 1, "allocations": 1},
-        "environment": {
-            "SERVER_JARFILE": "server.jar",
-            "DL_PATH": "https://api.papermc.io/v2/projects/paper/versions/1.20.1/builds/123/downloads/paper-1.20.1-123.jar",
-            "SERVER_PORT": "25565"
-        },
-        "allocation": {
-            "default": 1  # Replace with real allocation ID
-        },
-        "deploy": {
-            "locations": [NODE_ID],
-            "dedicated_ip": False,
-            "port_range": []
-        },
-        "start_on_completion": True
-    }
     headers = {
         "Authorization": f"Bearer {PANEL_API_KEY}",
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{PANEL_URL}/api/application/servers", headers=headers, json=payload) as resp:
-            if resp.status == 201:
-                await interaction.followup.send("✅ Successfully created your server. Check panel!", ephemeral=True)
-            else:
-                text = await resp.text()
-                await interaction.followup.send(f"❌ Failed: {resp.status}\n{text}", ephemeral=True)
 
+    async with aiohttp.ClientSession() as session:
+        # Find panel user by email
+        async with session.get(f"{PANEL_URL}/api/application/users", headers=headers) as user_resp:
+            users = await user_resp.json()
+            user_id = None
+            for u in users["data"]:
+                if u["attributes"]["email"] == email:
+                    user_id = u["attributes"]["id"]
+                    break
+
+        if not user_id:
+            await interaction.response.send_message("❌ Panel user not found. Please create account using `/ac`.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("⏳ Creating your server. Please wait...", ephemeral=True)
+
+        # Server config
+        server_data = {
+            "name": servername,
+            "user": user_id,
+            "egg": MINECRAFT_EGG_ID,
+            "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
+            "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui",
+            "limits": {"memory": 4096, "swap": 0, "disk": 10240, "io": 500, "cpu": 100},
+            "feature_limits": {"databases": 0, "backups": 0, "allocations": 1},
+            "environment": {
+                "SERVER_JARFILE": "server.jar",
+                "DL_PATH": "https://api.papermc.io/v2/projects/paper/versions/1.20.1/builds/103/downloads/paper-1.20.1-103.jar",
+                "VERSION": "1.20.1",
+                "TYPE": "vanilla"
+            },
+            "deploy": {"locations": [1], "dedicated_ip": False, "port_range": []},
+            "start_on_completion": True
+        }
+
+        async with session.post(f"{PANEL_URL}/api/application/servers", headers=headers, json=server_data) as resp:
+            if resp.status in [200, 201]:
+                await interaction.followup.send("✅ Successfully created your server. Check panel link in DM!", ephemeral=True)
+                await interaction.user.send(f"🎉 Your Minecraft server `{servername}` has been created!\n🔗 Panel: {PANEL_URL}")
+            else:
+                error = await resp.text()
+                await interaction.followup.send(f"❌ Failed to create server: `{error}`", ephemeral=True)
 
 # -------------------- REMOVEALL --------------------
 @bot.tree.command(name="removeall", description="Remove all Minecraft servers by user ID")
