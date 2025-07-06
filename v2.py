@@ -683,62 +683,44 @@ async def setupstatus(interaction: discord.Interaction, channelid: str):
     await interaction.response.send_message(f"✅ Status updates will be posted in <#{channelid}>", ephemeral=True)
 
 # -------------------- /nodes --------------------
-@bot.tree.command(name="nodes", description="📊 Show panel node stats")
+@bot.tree.command(name="nodes", description="📡 Show panel and node status")
 async def nodes(interaction: discord.Interaction):
-    headers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Accept": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {PANEL_API_KEY}",
+        "Accept": "application/json"
+    }
+
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{PANEL_URL}/api/application/nodes/{NODE_ID}/allocations", headers=headers) as resp1,
-                   session.get(f"{PANEL_URL}/api/application/nodes/{NODE_ID}", headers=headers) as resp2:
-            if resp1.status == 200 and resp2.status == 200:
-                allocs = await resp1.json()
-                node = await resp2.json()
+        try:
+            async with session.get(f"{PANEL_URL}/api/application/nodes", headers=headers) as resp:
+                if resp.status != 200:
+                    await interaction.response.send_message("❌ Failed to fetch node data.", ephemeral=True)
+                    return
 
-                name = node['attributes']['name']
-                mem = node['attributes']['memory']
-                disk = node['attributes']['disk']
-                used_mem = node['attributes']['allocated_resources']['memory']
-                used_disk = node['attributes']['allocated_resources']['disk']
+                data = await resp.json()
+                nodes = data.get("data", [])
 
-                embed = discord.Embed(title=f"🧠 Node: {name} Status", color=0x00ff00)
-                embed.add_field(name="Memory", value=f"{used_mem}/{mem} MB", inline=True)
-                embed.add_field(name="Disk", value=f"{used_disk}/{disk} MB", inline=True)
-                embed.set_footer(text="DragonCloud Panel Node Monitor")
+                embed = discord.Embed(title="📊 DragonCloud Node Status", color=0x00ff00)
+
+                for node in nodes:
+                    attr = node["attributes"]
+                    name = attr["name"]
+                    mem_total = attr["memory"]
+                    mem_used = attr["memory_overallocate"]
+                    disk_total = attr["disk"]
+                    disk_used = attr["disk_overallocate"]
+                    location = attr["location_id"]
+                    status = "🟢 Online" if attr["public"] else "🔴 Offline"
+
+                    embed.add_field(
+                        name=f"🌐 {name} ({status})",
+                        value=f"**Memory:** {mem_total} MB\n**Disk:** {disk_total} MB\n**Location ID:** {location}",
+                        inline=False
+                    )
 
                 await interaction.response.send_message(embed=embed)
-            else:
-                await interaction.response.send_message("❌ Failed to fetch node status.", ephemeral=True)
 
-# Background task (if you want auto-posting every X mins)
-@tasks.loop(minutes=10)
-async def post_status_update():
-    if not os.path.exists(status_channel_file):
-        return
-    with open(status_channel_file, "r") as f:
-        channel_id = f.read().strip()
-    try:
-        channel = bot.get_channel(int(channel_id))
-        if channel is None:
-            return
-        headers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Accept": "application/json"}
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{PANEL_URL}/api/application/nodes/{NODE_ID}", headers=headers) as resp:
-                if resp.status == 200:
-                    node = await resp.json()
-                    name = node['attributes']['name']
-                    mem = node['attributes']['memory']
-                    disk = node['attributes']['disk']
-                    used_mem = node['attributes']['allocated_resources']['memory']
-                    used_disk = node['attributes']['allocated_resources']['disk']
-
-                    embed = discord.Embed(title=f"🧠 Node: {name} Status", color=0x3498db)
-                    embed.add_field(name="Memory", value=f"{used_mem}/{mem} MB", inline=True)
-                    embed.add_field(name="Disk", value=f"{used_disk}/{disk} MB", inline=True)
-                    embed.timestamp = datetime.utcnow()
-
-                    await channel.send(embed=embed)
-    except Exception as e:
-        print(f"Status update error: {e}")
-
-post_status_update.start()
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ Error: {e}", ephemeral=True)
 
 bot.run(TOKEN)
