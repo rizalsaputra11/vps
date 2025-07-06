@@ -717,45 +717,48 @@ async def setupstatus(interaction: discord.Interaction, channelid: str):
         f.write(channelid)
     await interaction.response.send_message(f"✅ Status updates will be posted in <#{channelid}>", ephemeral=True)
 
-# -------------------- /nodes --------------------
-@bot.tree.command(name="nodes", description="📡 Show panel and node status")
+# -------------------- /nodes - Show Panel & Node Uptime --------------------
+@bot.tree.command(name="nodes", description="🌐 Show panel uptime and node status")
 async def nodes(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
     headers = {
         "Authorization": f"Bearer {PANEL_API_KEY}",
+        "Content-Type": "application/json",
         "Accept": "application/json"
     }
 
     async with aiohttp.ClientSession() as session:
+        # Panel Uptime Check
         try:
             async with session.get(f"{PANEL_URL}/api/application/nodes", headers=headers) as resp:
                 if resp.status != 200:
-                    await interaction.response.send_message("❌ Failed to fetch node data.", ephemeral=True)
+                    await interaction.followup.send("❌ Failed to fetch nodes from panel.")
                     return
-
-                data = await resp.json()
-                nodes = data.get("data", [])
-
-                embed = discord.Embed(title="📊 DragonCloud Node Status", color=0x00ff00)
-
-                for node in nodes:
-                    attr = node["attributes"]
-                    name = attr["name"]
-                    mem_total = attr["memory"]
-                    mem_used = attr["memory_overallocate"]
-                    disk_total = attr["disk"]
-                    disk_used = attr["disk_overallocate"]
-                    location = attr["location_id"]
-                    status = "🟢 Online" if attr["public"] else "🔴 Offline"
-
-                    embed.add_field(
-                        name=f"🌐 {name} ({status})",
-                        value=f"**Memory:** {mem_total} MB\n**Disk:** {disk_total} MB\n**Location ID:** {location}",
-                        inline=False
-                    )
-
-                await interaction.response.send_message(embed=embed)
-
+                nodes_data = await resp.json()
         except Exception as e:
-            await interaction.response.send_message(f"⚠️ Error: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Error connecting to panel: `{e}`")
+            return
+
+        embed = discord.Embed(title="📊 Panel & Nodes Status", color=0x00ff99)
+        embed.set_footer(text="DragonCloud Node Monitor")
+
+        # Add Uptime Message
+        uptime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        embed.add_field(name="📅 Uptime Checked", value=f"`{uptime}`", inline=False)
+
+        # List all nodes
+        for node in nodes_data['data']:
+            attr = node['attributes']
+            name = attr['name']
+            location = attr['location_id']
+            mem = attr['memory']
+            disk = attr['disk']
+            used_mem = attr['allocated_resources']['memory']
+            used_disk = attr['allocated_resources']['disk']
+            status = f"RAM: {used_mem}/{mem} MB | Disk: {used_disk}/{disk} MB"
+            embed.add_field(name=f"🖥️ Node: {name} (Location {location})", value=status, inline=False)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 bot.run(TOKEN)
