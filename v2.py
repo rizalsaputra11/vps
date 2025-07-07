@@ -665,10 +665,10 @@ async def creates(interaction: discord.Interaction):
                                 user_id = data['attributes']['id']
                             else:
                                 err = await reg_resp.text()
-                                await user.send(f"❌ Failed to create account:\n```
-{err}```")
+                                await user.send("❌ Failed to create account.\n```Check panel logs or credentials.```")
+                                
                                 return
-
+                               
                     srv_payload = {
                         "name": servername,
                         "user": user_id,
