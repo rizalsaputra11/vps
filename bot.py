@@ -15,9 +15,9 @@ with open("config.json") as f:
 
 TOKEN = ""
 ADMIN_ID = "1159037240622723092"
-PANEL_URL = "https://zyrotheme.fluxhosting.cloud"
-PANEL_API_KEY = "ptla_CTPyhCmz2SeayViQ1SjzfkqEtHNvZbc93YsGKmmN9fN"
-API_KEY = "ptla_CTPyhCmz2SeayViQ1SjzfkqEtHNvZbc93YsGKmmN9fN"
+PANEL_URL = "https://dragoncloud.godanime.net"
+PANEL_API_KEY = ""
+API_KEY = ""
 ADMIN_IDS = "1159037240622723092"
 HEADERS = {"Authorization": f"Bearer {PANEL_API_KEY}", "Content-Type": "application/json"}
 EGG_ID = 1  # Replace with your Minecraft (Paper) egg ID
@@ -403,7 +403,7 @@ class ServerControlView(discord.ui.View):
         self.serverid = serverid
 
     async def send_power_signal(self, interaction: discord.Interaction, signal: str):
-        url = f"https://zyrotheme.fluxhosting.cloud/api/client/servers/{self.serverid}/power"
+        url = f"https://dragoncloud.godanime.net/api/client/servers/{self.serverid}/power"
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json", "Content-Type": "application/json"}
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json={"signal": signal}) as resp:
@@ -487,7 +487,7 @@ async def manage(interaction: discord.Interaction, token: str):
     await interaction.response.defer(ephemeral=True)
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     async with aiohttp.ClientSession() as session:
-        async with session.get("https://zyrotheme.fluxhosting.cloud/api/client", headers=headers) as resp:
+        async with session.get("https://dragoncloud.godanime.net/api/client", headers=headers) as resp:
             if resp.status != 200:
                 await interaction.followup.send("❌ Invalid token.")
                 return
@@ -507,7 +507,7 @@ async def manage(interaction: discord.Interaction, token: str):
 
 # -------------------- GET SERVER INTERNAL ID --------------------
 async def get_server_internal_id(identifier):
-    url = "https://zyrotheme.fluxhosting.cloud/api/application/servers"
+    url = "https://dragoncloud.godanime.net/api/application/servers"
     headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
