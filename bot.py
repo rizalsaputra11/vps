@@ -16,8 +16,8 @@ with open("config.json") as f:
 TOKEN = ""
 ADMIN_ID = "1159037240622723092"
 PANEL_URL = "https://dragoncloud.godanime.net"
-PANEL_API_KEY = ""
-API_KEY = ""
+PANEL_API_KEY = "ptla_MjEd6PFU101lArxG27p837MGcquBz81JftzhdWL3UMn"
+API_KEY = "ptla_MjEd6PFU101lArxG27p837MGcquBz81JftzhdWL3UMn"
 ADMIN_IDS = "1159037240622723092"
 HEADERS = {"Authorization": f"Bearer {PANEL_API_KEY}", "Content-Type": "application/json"}
 EGG_ID = 1  # Replace with your Minecraft (Paper) egg ID
@@ -789,7 +789,7 @@ async def createserver(
     await interaction.response.send_message("🚀 **Deploying Server:** Please wait...", ephemeral=True)
 
     # Step 1: Get User ID from Email
-    api_key = "YOUR_PANEL_API_KEY"  # Replace with actual API key
+    api_key = "ptla_MjEd6PFU101lArxG27p837MGcquBz81JftzhdWL3UMn"  # Replace with actual API key
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -866,7 +866,7 @@ async def create(interaction: discord.Interaction, usertag: discord.User, email:
         return
 
     panel_url = "https://dragoncloud.godanime.net"
-    api_key = "YOUR_PANEL_API_KEY"  # Replace with your real API key
+    api_key = "ptla_MjEd6PFU101lArxG27p837MGcquBz81JftzhdWL3UMn"  # Replace with your real API key
 
     headers = {
         "Authorization": f"Bearer {api_key}",
