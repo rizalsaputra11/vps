@@ -757,144 +757,46 @@ async def nodes(interaction: discord.Interaction):
             inline=False
         )
     await interaction.followup.send(embed=emb)
-@bot.tree.command(name="createserver", description="Create server for user on DragonCloud Panel [Admin Only]")
-@app_commands.describe(
-    servername="Name of the server",
-    serverowneremail="Email of the server owner",
-    selectnode="Node ID (example: 1)",
-    setcpu="CPU limit (in %)",
-    setmemory="Memory in MB",
-    setdisk="Disk in MB",
-    nest="Nest ID (example: 1 for Minecraft)",
-    egg="Egg ID (example: 1 for PaperMC)",
-    panelurl="Panel URL"
-)
-async def createserver(
-    interaction: discord.Interaction,
-    user: discord.User,
-    servername: str,
-    serverowneremail: str,
-    selectnode: str,
-    setcpu: int,
-    setmemory: int,
-    setdisk: int,
-    nest: int,
-    egg: int,
-    panelurl: str
-):
-    if interaction.user.id not in admin_ids:
-        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
-        return
 
-    await interaction.response.send_message("🚀 **Deploying Server:** Please wait...", ephemeral=True)
+@bot.tree.command(name="create", description="Create a Pterodactyl panel account")
+@app_commands.describe(usertag="Mention the user", email="Email address", password="Password")
+async def create(interaction: discord.Interaction, usertag: discord.Member, email: str, password: str):
+    await interaction.response.defer(thinking=True)  # ✅ Prevents timeout
 
-    # Step 1: Get User ID from Email
-    api_key = "ptla_MjEd6PFU101lArxG27p837MGcquBz81JftzhdWL3UMn"  # Replace with actual API key
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
-
-    user_id = None
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{panelurl}/api/application/users", headers=headers) as r:
-            users = await r.json()
-            for u in users['data']:
-                if u['attributes']['email'] == serverowneremail:
-                    user_id = u['attributes']['id']
-                    break
-
-        if user_id is None:
-            await interaction.followup.send("❌ User not found on panel with that email.", ephemeral=True)
-            return
-
-        # Step 2: Create server
+    try:
+        # Example API request to create a user on Pterodactyl
+        panel_url = "https://dragoncloud.godanime.net/api/application/users"
+        headers = {
+            "Authorization": f"Bearer {PANEL_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
         payload = {
-            "name": servername,
-            "user": user_id,
-            "nest": nest,
-            "egg": egg,
-            "docker_image": "ghcr.io/pterodactyl/yolks:java_17",  # Adjust based on egg
-            "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
-            "limits": {
-                "memory": setmemory,
-                "swap": 0,
-                "disk": setdisk,
-                "io": 500,
-                "cpu": setcpu
-            },
-            "feature_limits": {
-                "databases": 1,
-                "allocations": 1,
-                "backups": 1
-            },
-            "environment": {
-                "SERVER_JARFILE": "server.jar",
-                "BUILD_NUMBER": "latest",
-                "SERVER_VERSION": "latest"
-            },
-            "deploy": {
-                "locations": [int(selectnode)],
-                "dedicated_ip": False,
-                "port_range": []
-            },
-            "start_on_completion": True
+            "email": email,
+            "username": email.split("@")[0],
+            "first_name": usertag.name,
+            "last_name": "DragonCloud",
+            "password": password
         }
 
-        async with session.post(f"{panelurl}/api/application/servers", json=payload, headers=headers) as resp:
-            data = await resp.json()
-            if resp.status == 201:
-                await interaction.followup.send(f"✅ Server created and user notified!", ephemeral=True)
-                await user.send(
-                    f"🎉 **Your Minecraft Server Has Been Created!**\n\n"
-                    f"🖥️ Server Name: `{servername}`\n"
-                    f"🌐 Panel: {panelurl}\n"
-                    f"📧 Email: `{serverowneremail}`\n"
-                    f"💾 RAM: `{setmemory} MB`, CPU: `{setcpu}%`, Disk: `{setdisk} MB`\n\n"
-                    f"⚡ Enjoy your server!"
-                )
-            else:
-                await interaction.followup.send(f"❌ Failed to create server. Response:\n```{data}```", ephemeral=True)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(panel_url, headers=headers, json=payload) as resp:
+                data = await resp.json()
 
-@bot.tree.command(name="create", description="Create user on DragonCloud Panel [Admin Only]")
-@app_commands.describe(usertag="User to create account for", email="Email for user", password="Password for user")
-async def create(interaction: discord.Interaction, usertag: discord.User, email: str, password: str):
-    if interaction.user.id not in admin_ids:
-        await interaction.response.send_message("❌ You are not authorized to use this command.", ephemeral=True)
-        return
+        # ✅ Send after processing
+        await interaction.followup.send(
+            f"✅ Account created for {usertag.mention}\nEmail: `{email}`\nPassword: `{password}`"
+        )
 
-    panel_url = "https://dragoncloud.godanime.net"
-    api_key = "ptla_MjEd6PFU101lArxG27p837MGcquBz81JftzhdWL3UMn"  # Replace with your real API key
+        # DM the user
+        try:
+            await usertag.send(
+                f"🎉 Your DragonCloud panel account has been created!\n**Email:** {email}\n**Password:** {password}\nPanel: https://dragoncloud.godanime.net"
+            )
+        except:
+            await interaction.followup.send("⚠️ Could not DM the user.")
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
-
-    payload = {
-        "username": str(usertag).split("#")[0],
-        "email": email,
-        "first_name": usertag.name,
-        "last_name": "Dragon",
-        "password": password
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{panel_url}/api/application/users", json=payload, headers=headers) as resp:
-            if resp.status == 201:
-                await interaction.response.send_message(f"✅ User created and DM sent to {usertag.mention}.", ephemeral=True)
-                await usertag.send(
-                    f"✅ **Your DragonCloud Panel Account Has Been Created!**\n\n"
-                    f"🌐 Panel: {panel_url}\n"
-                    f"📧 Email: `{email}`\n"
-                    f"🔑 Password: `{password}`\n\n"
-                    f"Enjoy managing your server!"
-                )
-            else:
-                data = await resp.text()
-            await interaction.response.send_message(f"❌ Failed to create user.\n```{data}```", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: `{str(e)}`")
 
 bot.run(TOKEN)
