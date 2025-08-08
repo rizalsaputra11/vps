@@ -713,22 +713,6 @@ async def creates(interaction: discord.Interaction):
 async def multiple(interaction: discord.Interaction, a: int, b: int):
     await interaction.response.send_message(f"{a} × {b} = **{a * b}**", ephemeral=True)
 
-@bot.tree.command(name="controlpanel", description="⚙️  Quick panel menu")
-async def controlpanel(interaction: discord.Interaction):
-    class PanelView(discord.ui.View):
-        @discord.ui.button(label="Create – Boost / Invite", style=discord.ButtonStyle.success)
-        async def boost_invite(self, i: discord.Interaction, _):
-            await i.response.send_message("Use **/creates** to open the Boost / Invite wizard.", ephemeral=True)
-
-        @discord.ui.button(label="Create – Free 4 GB", style=discord.ButtonStyle.primary)
-        async def free(self, i: discord.Interaction, _):
-            await i.response.send_message('Run: `/createfree server‑name your@email.com`', ephemeral=True)
-
-        @discord.ui.button(label="Panel URL", style=discord.ButtonStyle.gray)
-        async def panel(self, i: discord.Interaction, _):
-            await i.response.send_message(f"🌐 {PANEL_URL}", ephemeral=True)
-
-        await interaction.response.send_message("Choose an option:", view=PanelView(), ephemeral=True)
 
 @bot.tree.command(name="nodes", description="📊 Node dashboard")
 async def nodes(interaction: discord.Interaction):
