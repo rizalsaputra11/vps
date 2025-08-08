@@ -817,7 +817,7 @@ async def createserver(interaction: discord.Interaction, servername: str, email:
     try:
         # Example: Create server in Pterodactyl
         panel_url = "https://dragoncloud.godanime.net"
-        api_key = "YOUR_ADMIN_API_KEY"
+        admin_api_key = "ptlc_wWHTuow6DNWC0aDpVqcQZl4I5qZFbthzO4EEHZpYrhs"
 
         payload = {
             "name": servername,
@@ -837,7 +837,7 @@ async def createserver(interaction: discord.Interaction, servername: str, email:
             "deploy": {"locations": [node], "dedicated_ip": False, "port_range": []}
         }
 
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "application/json"}
+        headers = {"Authorization": f"Bearer {admin_api_key}", "Content-Type": "application/json", "Accept": "application/json"}
 
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{panel_url}/api/application/servers", headers=headers, json=payload) as resp:
