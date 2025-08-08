@@ -16,8 +16,8 @@ with open("config.json") as f:
 TOKEN = ""
 ADMIN_ID = "1159037240622723092"
 PANEL_URL = "https://dragoncloud.godanime.net"
-PANEL_API_KEY = "ptla_MjEd6PFU101lArxG27p837MGcquBz81JftzhdWL3UMn"
-API_KEY = "ptla_MjEd6PFU101lArxG27p837MGcquBz81JftzhdWL3UMn"
+PANEL_API_KEY = "ptla_CXcKJW5kXBnAfK1o00yRYD456STG8hVPDs4W9CFI7qW"
+API_KEY = "ptla_CXcKJW5kXBnAfK1o00yRYD456STG8hVPDs4W9CFI7qW"
 ADMIN_IDS = "1159037240622723092"
 HEADERS = {"Authorization": f"Bearer {PANEL_API_KEY}", "Content-Type": "application/json"}
 EGG_ID = 1  # Replace with your Minecraft (Paper) egg ID
@@ -59,7 +59,7 @@ async def ping(interaction: discord.Interaction):
 
 @tree.command(name="botinfo")
 async def botinfo(interaction: discord.Interaction):
-    await interaction.response.send_message("🤖 Made by Gamerzhacker")
+    await interaction.response.send_message("** Bot Version 1.0.0 Dev. Gamerzhacker ")
 
 @tree.command(name="addadmin")
 @app_commands.describe(userid="User ID")
@@ -728,7 +728,8 @@ async def controlpanel(interaction: discord.Interaction):
         async def panel(self, i: discord.Interaction, _):
             await i.response.send_message(f"🌐 {PANEL_URL}", ephemeral=True)
 
-    await interaction.response.send_message("Choose an option:", view=PanelView(), ephemeral=True)
+        await interaction.response.send_message("Choose an option:", view=PanelView(), ephemeral=True)
+
 @bot.tree.command(name="nodes", description="📊 Node dashboard")
 async def nodes(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -741,7 +742,7 @@ async def nodes(interaction: discord.Interaction):
             await interaction.followup.send(f"⚠️ Panel timeout: {e}");  return
 
     emb = discord.Embed(
-        title="🛡️ WardenCloud • Node Status",
+        title="🛡️ DragonCloud • Node Status",
         description=f"⌚ Last check: <t:{int(datetime.datetime.utcnow().timestamp())}:R>",
         color=0x5865f2
     )
@@ -798,5 +799,55 @@ async def create(interaction: discord.Interaction, usertag: discord.Member, emai
 
     except Exception as e:
         await interaction.followup.send(f"❌ Error: `{str(e)}`")
+
+@bot.tree.command(name="createserver", description="Create a new server on the panel")
+@app_commands.describe(
+    servername="Name of the server",
+    email="Owner's email address",
+    cpu="CPU limit in %",
+    memory="Memory limit in MB",
+    disk="Disk limit in MB",
+    nest_id="Nest ID for the server",
+    egg_id="Egg ID for the server",
+    node="Node ID for the server"
+)
+async def createserver(interaction: discord.Interaction, servername: str, email: str, cpu: int, memory: int, disk: int, nest_id: int, egg_id: int, node: int):
+    await interaction.response.defer(ephemeral=True)  # Prevents timeout
+
+    try:
+        # Example: Create server in Pterodactyl
+        panel_url = "https://dragoncloud.godanime.net"
+        api_key = "YOUR_ADMIN_API_KEY"
+
+        payload = {
+            "name": servername,
+            "user": get_user_id_by_email(email),  # Your function to get panel user ID
+            "nest": nest_id,
+            "egg": egg_id,
+            "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
+            "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
+            "limits": {
+                "memory": memory,
+                "swap": 0,
+                "disk": disk,
+                "io": 500,
+                "cpu": cpu
+            },
+            "feature_limits": {"databases": 1, "backups": 1, "allocations": 1},
+            "deploy": {"locations": [node], "dedicated_ip": False, "port_range": []}
+        }
+
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "application/json"}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{panel_url}/api/application/servers", headers=headers, json=payload) as resp:
+                data = await resp.json()
+                if resp.status == 201:
+                    await interaction.followup.send(f"✅ Server **{servername}** created successfully!", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"❌ Failed to create server: {data}", ephemeral=True)
+
+    except Exception as e:
+        await interaction.followup.send(f"⚠️ Error: {e}", ephemeral=True)
 
 bot.run(TOKEN)
