@@ -765,11 +765,7 @@ async def api_get(path: str):
 async def api_post(path: str, payload):
     if not config.get("api_key") or not config.get("panel_url"):
         raise RuntimeError("Panel URL or API key not configured. Use /dashpanel (admin).")
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+    handers = {"Authorization": f"Bearer {PANEL_API_KEY}", "Content-Type": "application/json"}
     url = config["panel_url"].rstrip("/") + path
     async with aiohttp.ClientSession() as s:
         async with s.post(url, headers=headers, json=payload, timeout=30) as r:
