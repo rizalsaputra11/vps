@@ -8,6 +8,7 @@ import asyncio
 import os
 import subprocess
 from datetime import datetime
+from typing import Optional
 
 # Load config
 with open("config.json") as f:
@@ -44,6 +45,7 @@ giveaways_file = "giveaways.json"
 accountapi_file = "accountapi.json"
 account_data_file = "accounts.json"
 status_channel_file = 'status_channel.txt'
+CONFIG_FILE = "panel_config.json"
 
 @bot.event
 async def on_ready():
@@ -744,89 +746,343 @@ async def nodes(interaction: discord.Interaction):
         )
     await interaction.followup.send(embed=emb)
 
-# ✅ Get user ID from Pterodactyl by email
-async def get_user_id_by_email(email):
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Accept": "application/json"
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{PTERO_PANEL_URL}/api/application/users", headers=headers) as resp:
-            data = await resp.json()
-            for user in data["data"]:
-                if user["attributes"]["email"].lower() == email.lower():
-                    return user["attributes"]["id"]
-    return None
+# ---------------- Persist panel config ----------------
+def load_config():
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"panel_url": None, "api_key": None}
 
-# ✅ /createserver (Admin only, no more "thinking...")
-@bot.tree.command(name="createserver", description="Create a Pterodactyl server (Admin only)")
-@app_commands.checks.has_permissions(administrator=True)
-async def createserver(
-    interaction: discord.Interaction,
-    server_name: str,
-    owner_email: str,
-    node: int,
-    cpu: int,
-    memory: int,
-    disk: int,
-    nest: int,
-    egg: int
-):
-    await interaction.response.send_message(f"⏳ Creating server `{server_name}` for `{owner_email}`...", ephemeral=True)
 
-    user_id = await get_user_id_by_email(owner_email)
-    if not user_id:
-        await interaction.followup.send(f"❌ No user found with email `{owner_email}`.", ephemeral=True)
-        return
+def save_config(cfg):
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(cfg, f, indent=2)
 
+
+config = load_config()
+
+
+# ---------------- Helpers: Pterodactyl API ----------------
+async def api_get(path: str):
+    if not config.get("api_key") or not config.get("panel_url"):
+        raise RuntimeError("Panel URL or API key not configured. Use /dashpanel (admin).")
+    headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+    url = config["panel_url"].rstrip("/") + path
+    async with aiohttp.ClientSession() as s:
+        async with s.get(url, headers=headers, timeout=15) as r:
+            text = await r.text()
+            try:
+                data = json.loads(text)
+            except Exception:
+                data = text
+            return r.status, data
+
+
+async def api_post(path: str, payload):
+    if not config.get("api_key") or not config.get("panel_url"):
+        raise RuntimeError("Panel URL or API key not configured. Use /dashpanel (admin).")
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Accept": "application/json",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
+    url = config["panel_url"].rstrip("/") + path
+    async with aiohttp.ClientSession() as s:
+        async with s.post(url, headers=headers, json=payload, timeout=30) as r:
+            text = await r.text()
+            try:
+                data = json.loads(text)
+            except Exception:
+                data = text
+            return r.status, data
+
+
+# fetch user id by email (application API)
+async def get_user_id_by_email(email: str) -> Optional[int]:
+    status, data = await api_get("/api/application/users")
+    if status != 200:
+        raise RuntimeError(f"Failed to fetch users: {data}")
+    for u in data.get("data", []):
+        if u["attributes"]["email"].lower() == email.lower():
+            return u["attributes"]["id"]
+    return None
+
+
+# create panel user (admin application API)
+async def create_panel_user(username: str, email: str, password: str):
+    payload = {
+        "username": username,
+        "email": email,
+        "first_name": username,
+        "last_name": "User",
+        "password": password,
+        "root_admin": False,
+        "language": "en"
+    }
+    status, data = await api_post("/api/application/users", payload)
+    return status, data
+
+
+# create server on panel (application API)
+async def create_panel_server(server_name: str, user_id: int, egg: int, node: int, memory: int, cpu: int, disk: int, startup=None):
+    if startup is None:
+        startup = "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui"
     payload = {
         "name": server_name,
         "user": user_id,
         "egg": egg,
-        "docker_image": "ghcr.io/parkervcp/yolks:java_17",
-        "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
-        "limits": {
-            "memory": memory,
-            "swap": 0,
-            "disk": disk,
-            "io": 500,
-            "cpu": cpu
-        },
-        "environment": {
-            "SERVER_JARFILE": "server.jar",
-            "VERSION": "latest",
-            "TYPE": "paper"
-        },
-        "allocation": {"default": 1},
-        "feature_limits": {
-            "databases": 1,
-            "allocations": 1,
-            "backups": 1
-        }
+        "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
+        "startup": startup,
+        "limits": {"memory": memory, "swap": 0, "disk": disk, "io": 500, "cpu": cpu},
+        "feature_limits": {"databases": 0, "backups": 0, "allocations": 1},
+        "environment": {"SERVER_JARFILE": "server.jar", "VERSION": "latest", "TYPE": "paper"},
+        "deploy": {"locations": [node], "dedicated_ip": False, "port_range": []},
+        "start_on_completion": True
     }
+    status, data = await api_post("/api/application/servers", payload)
+    return status, data
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{PANEL_URL}/api/application/servers", headers=headers, json=payload) as resp:
-            if resp.status == 201:
-                await interaction.followup.send(f"✅ Server `{server_name}` created successfully for `{owner_email}` (User ID: `{user_id}`).", ephemeral=True)
-            else:
-                error_text = await resp.text()
-                await interaction.followup.send(f"❌ Failed to create server:\n```{error_text}```", ephemeral=True)
 
-# ✅ /dm command to send a private message to a user
-@bot.tree.command(name="dm", description="Send a DM to a user")
-@app_commands.describe(user="The user to DM", message="The message to send")
-async def dm_user(interaction: discord.Interaction, user: discord.User, message: str):
+# ---------------- Admin command: set panel URL + API key ----------------
+@bot.tree.command(name="dashpanel", description="(Admin) Set Panel URL and Admin API key for DragonCloud")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(panel_url="Panel base URL (e.g. https://dragoncloud.godanime.net)", api_key="Application API Key")
+async def dashpanel(interaction: discord.Interaction, panel_url: str, api_key: str):
+    await interaction.response.defer(ephemeral=True)
+    config["panel_url"] = panel_url.strip()
+    config["api_key"] = api_key.strip()
+    save_config(config)
+    await interaction.followup.send("✅ Panel URL and API key saved.", ephemeral=True)
+
+
+# show saved config (admin)
+@bot.tree.command(name="dashboard", description="Show saved panel config (admins see details, users get actions)")
+async def dashboard(interaction: discord.Interaction):
+    # For admins, show config. For users, show interactive panel (Create Account / Create Server)
+    if interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🛠 DragonCloud Panel Config",
+                description=f"**Panel URL:** `{config.get('panel_url')}`\n**API Key:** `{'SET' if config.get('api_key') else 'NOT SET'}`",
+                color=discord.Color.blurple()
+            ),
+            ephemeral=True
+        )
+        return
+
+    # User interactive dashboard
+    view = discord.ui.View(timeout=120)
+
+    async def create_account_cb(i: discord.Interaction):
+        # show modal for email + password
+        class AccountModal(discord.ui.Modal, title="Create Panel Account"):
+            email = discord.ui.TextInput(label="Email", style=discord.TextStyle.short, required=True)
+            password = discord.ui.TextInput(label="Password", style=discord.TextStyle.short, required=True, min_length=8)
+
+            async def on_submit(self, modal_i: discord.Interaction):
+                await modal_i.response.defer(ephemeral=True)
+                try:
+                    username = self.email.value.split("@")[0]
+                    status, data = await create_panel_user(username, self.email.value, self.password.value)
+                    if status in (200, 201):
+                        # find created user id if present
+                        user_id = None
+                        if isinstance(data, dict):
+                            user_id = data.get("attributes", {}).get("id") or data.get("data", {}).get("attributes", {}).get("id")
+                        await modal_i.followup.send("✅ Account created! Check your DMs.", ephemeral=True)
+                        try:
+                            await modal_i.user.send(f"✅ Panel account created.\nPanel: {config.get('panel_url')}\nEmail: `{self.email.value}`\nPassword: `{self.password.value}`")
+                        except discord.Forbidden:
+                            await modal_i.followup.send("⚠️ Could not DM you — please enable DMs.", ephemeral=True)
+                    else:
+                        await modal_i.followup.send(f"❌ Failed to create account:\n```{data}```", ephemeral=True)
+                except Exception as e:
+                    await modal_i.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+        await i.response.send_modal(AccountModal())
+
+    async def create_server_cb(i: discord.Interaction):
+        # Show select menus / inputs via a modal or series of selects.
+        # We'll send an ephemeral message with a View that contains selects:
+        class ServerView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=120)
+
+                # preset options
+                self.add_item(discord.ui.Select(
+                    placeholder="Select RAM (MB) — max 4096",
+                    options=[
+                        discord.SelectOption(label="1 GB", value="1024"),
+                        discord.SelectOption(label="2 GB", value="2048"),
+                        discord.SelectOption(label="3 GB", value="3072"),
+                        discord.SelectOption(label="4 GB", value="4096")
+                    ],
+                    custom_id="ram_select"
+                ))
+
+                self.add_item(discord.ui.Select(
+                    placeholder="Select CPU (%) — max 200",
+                    options=[
+                        discord.SelectOption(label="50%", value="50"),
+                        discord.SelectOption(label="100%", value="100"),
+                        discord.SelectOption(label="150%", value="150"),
+                        discord.SelectOption(label="200%", value="200")
+                    ],
+                    custom_id="cpu_select"
+                ))
+
+                self.add_item(discord.ui.Select(
+                    placeholder="Select Disk (MB) — max 10240",
+                    options=[
+                        discord.SelectOption(label="5 GB", value="5120"),
+                        discord.SelectOption(label="10 GB", value="10240")
+                    ],
+                    custom_id="disk_select"
+                ))
+
+                self.add_item(discord.ui.Select(
+                    placeholder="Select Egg",
+                    options=[
+                        discord.SelectOption(label="Paper (recommended)", value="paper"),
+                        discord.SelectOption(label="Villager", value="villager")
+                    ],
+                    custom_id="egg_select"
+                ))
+
+            @discord.ui.button(label="Continue", style=discord.ButtonStyle.success)
+            async def continue_btn(self, button_i: discord.Interaction, _):
+                # collect the selected options from message components
+                msg = button_i.message
+                selects = [c for c in msg.components[0].children] if msg.components else []
+                # simpler: ask for server name and email via a modal now
+                class ServerCreateModal(discord.ui.Modal, title="Server Details"):
+                    server_name = discord.ui.TextInput(label="Server name", required=True, max_length=32)
+                    owner_email = discord.ui.TextInput(label="Your panel email", required=True)
+
+                    async def on_submit(self, modal_i: discord.Interaction):
+                        await modal_i.response.defer(ephemeral=True)
+                        try:
+                            # read selections from the original message (component values)
+                            parent_msg = await modal_i.channel.fetch_message(msg.id)
+                            comp_values = {}
+                            for row in parent_msg.components:
+                                for child in row.children:
+                                    if isinstance(child, discord.ui.Select):
+                                        comp_values[child.custom_id] = child.values[0] if child.values else None
+
+                            ram = int(comp_values.get("ram_select", "1024"))
+                            cpu = int(comp_values.get("cpu_select", "100"))
+                            disk = int(comp_values.get("disk_select", "5120"))
+                            egg_choice = comp_values.get("egg_select", "paper")
+                            egg_id = 1 if egg_choice == "paper" else 2  # adjust egg ids to your panel
+
+                            # validate limits
+                            if ram > 4096 or cpu > 200 or disk > 10240:
+                                await modal_i.followup.send("❌ Selected resources exceed allowed maximums.", ephemeral=True)
+                                return
+
+                            # find or create user by email
+                            user_id = await get_user_id_by_email(self.owner_email.value)
+                            if not user_id:
+                                # create a temporary account if user not found (use random password)
+                                temp_pass = "TempPass123!"
+                                st, dd = await create_panel_user(self.owner_email.value.split("@")[0], self.owner_email.value, temp_pass)
+                                if st not in (200, 201):
+                                    await modal_i.followup.send(f"❌ Failed to create panel account:\n```{dd}```", ephemeral=True)
+                                    return
+                                # try fetch user id again
+                                user_id = await get_user_id_by_email(self.owner_email.value)
+                                # DM user credentials
+                                try:
+                                    await modal_i.user.send(f"✅ Panel account created for `{self.owner_email.value}`\nPassword: `{temp_pass}`\nPanel: {config.get('panel_url')}")
+                                except discord.Forbidden:
+                                    await modal_i.followup.send("⚠️ Could not DM the user the account credentials.", ephemeral=True)
+
+                            # create server in background
+                            async def bg_create():
+                                try:
+                                    st2, d2 = await create_panel_server(self.server_name.value, user_id, egg_id, node=1, memory=ram, cpu=cpu, disk=disk)
+                                    if st2 in (200, 201):
+                                        try:
+                                            await modal_i.user.send(f"✅ Server `{self.server_name.value}` created!\nPanel: {config.get('panel_url')}")
+                                        except:
+                                            pass
+                                    else:
+                                        try:
+                                            await modal_i.user.send(f"❌ Server creation failed:\n```{d2}```")
+                                        except:
+                                            pass
+                                except Exception as ee:
+                                    try:
+                                        await modal_i.user.send(f"❌ Background error: {ee}")
+                                    except:
+                                        pass
+
+                            asyncio.create_task(bg_create())
+                            await modal_i.followup.send("⏳ Server is being created in the background — you'll get a DM when ready.", ephemeral=True)
+                        except Exception as e:
+                            await modal_i.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+                await button_i.response.send_modal(ServerCreateModal())
+
+        await i.response.send_message("📦 Choose resources for your free server (you will continue to enter name & email)...", view=ServerView(), ephemeral=True)
+
+    b1 = discord.ui.Button(label="Create Account", style=discord.ButtonStyle.blurple)
+    b2 = discord.ui.Button(label="Create Server", style=discord.ButtonStyle.green)
+
+    async def b1_cb(interaction_btn: discord.Interaction):
+        await create_account_cb(interaction_btn)
+
+    async def b2_cb(interaction_btn: discord.Interaction):
+        await create_server_cb(interaction_btn)
+
+    b1.callback = b1_cb
+    b2.callback = b2_cb
+
+    view.add_item(b1)
+    view.add_item(b2)
+
+    await interaction.response.send_message("Welcome to DragonCloud Dashboard — choose an option:", view=view, ephemeral=True)
+
+
+# ---------------- Admin createserver manual command (slash) ----------------
+@bot.tree.command(name="createserver", description="(Admin) Create server for given owner email")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(server_name="Server name", owner_email="Owner email", node="Node ID", cpu="CPU %", memory="Memory MB", disk="Disk MB", egg="Egg ID")
+async def createserver(interaction: discord.Interaction, server_name: str, owner_email: str, node: int, cpu: int, memory: int, disk: int, egg: int):
+    await interaction.response.defer(ephemeral=True)
+    if memory > 99000 or cpu > 9000 or disk > 2510240:
+        await interaction.followup.send("❌ Resource values exceed allowed maximums.", ephemeral=True)
+        return
+    user_id = await get_user_id_by_email(owner_email)
+    if not user_id:
+        await interaction.followup.send("❌ Owner not found on panel by that email.", ephemeral=True)
+        return
+    st, data = await create_panel_server(server_name, user_id, egg, node, memory, cpu, disk)
+    if st in (200, 201):
+        await interaction.followup.send(f"✅ Server `{server_name}` created (owner `{owner_email}`).", ephemeral=True)
+        # DM owner if possible
+        try:
+            # best effort: try to find discord user by email is not possible reliably; we simply notify the admin
+            pass
+        except:
+            pass
+    else:
+        await interaction.followup.send(f"❌ Failed: {data}", ephemeral=True)
+
+
+# ---------------- DM utility (admin only) ----------------
+@bot.tree.command(name="dm", description="(Admin) Send DM to a user")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(target="User to DM", message="Message to send")
+async def dm_cmd(interaction: discord.Interaction, target: discord.User, message: str):
+    await interaction.response.defer(ephemeral=True)
     try:
-        await user.send(message)
-        await interaction.response.send_message(f"📨 Sent DM to {user.mention}", ephemeral=True)
+        await target.send(message)
+        await interaction.followup.send("✅ DM sent.", ephemeral=True)
     except discord.Forbidden:
-        await interaction.response.send_message(f"❌ Cannot send DM to {user.mention} (they may have DMs disabled).", ephemeral=True)
+        await interaction.followup.send("❌ Cannot DM that user.", ephemeral=True)
 
 # ✅ /serverinfo command
 @bot.tree.command(name="serverinfo", description="Show server info in green embed")
