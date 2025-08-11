@@ -744,35 +744,6 @@ async def nodes(interaction: discord.Interaction):
         )
     await interaction.followup.send(embed=emb)
 
-@bot.tree.command(name="createat", description="Create a Pterodactyl panel account")
-@app_commands.describe(usertag="Mention the user", email="Email address", password="Password")
-async def create(interaction: discord.Interaction, usertag: discord.Member, email: str, password: str):
-    await interaction.response.defer(thinking=True)  # ✅ Prevents timeout
-
-    try:
-        # Example API request to create a user on Pterodactyl
-        panel_url = "https://dragoncloud.godanime.net/api/application/users"
-        headers = {
-            "Authorization": f"Bearer {PANEL_API_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        payload = {
-            "email": email,
-            "username": email.split("@")[0],
-            "first_name": usertag.name,
-            "last_name": "DragonCloud",
-            "password": password
-        }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(panel_url, headers=headers, json=payload) as resp:
-                data = await resp.json()
-
-        # ✅ Send after processing
-        await interaction.followup.send(
-            f"✅ Account created for {usertag.mention}\nEmail: `{email}`\nPassword: `{password}`"
-
 # ✅ Get user ID from Pterodactyl by email
 async def get_user_id_by_email(email):
     headers = {
