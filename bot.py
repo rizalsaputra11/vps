@@ -16,8 +16,9 @@ with open("config.json") as f:
 TOKEN = ""
 ADMIN_ID = "1159037240622723092"
 PANEL_URL = "https://dragoncloud.godanime.net"
-PANEL_API_KEY = "ptla_CXcKJW5kXBnAfK1o00yRYD456STG8hVPDs4W9CFI7qW"
-API_KEY = "ptla_CXcKJW5kXBnAfK1o00yRYD456STG8hVPDs4W9CFI7qW"
+PANEL_API_KEY = "ptla_OK2TnEswXZKYxMTNLQyJgcGQUEb4u0uLs8GEzUDAuIw"
+API_KEY = "ptla_OK2TnEswXZKYxMTNLQyJgcGQUEb4u0uLs8GEzUDAuIw"
+API_KEYS = "ptlc_gBDCPzaoIyETs1dm1X8mtcSojVFSKnwJUplnhdpVVSf"
 ADMIN_IDS = "1159037240622723092"
 HEADERS = {"Authorization": f"Bearer {PANEL_API_KEY}", "Content-Type": "application/json"}
 EGG_ID = 1  # Replace with your Minecraft (Paper) egg ID
@@ -859,7 +860,7 @@ class PteroManager(commands.Cog):
             }
 
             headers = {
-                "Authorization": f"Bearer {API_KEY}",
+                "Authorization": f"Bearer {API_KEYS}",
                 "Content-Type": "application/json",
                 "Accept": "application/json"
             }
@@ -899,7 +900,7 @@ class PteroManager(commands.Cog):
         }
 
         headers = {
-            "Authorization": f"Bearer {API_KEY}",
+            "Authorization": f"Bearer {API_KEYS}",
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
