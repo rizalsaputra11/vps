@@ -48,7 +48,7 @@ status_channel_file = 'status_channel.txt'
 @bot.event
 async def on_ready():
     await tree.sync()
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="DragonCloud Pterodactyl Panel Manager"))
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="Pterodactyl Panel Manager"))
     print(f"Bot is ready as {bot.user}")
 
 def is_admin(user):
