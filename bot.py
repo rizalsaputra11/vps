@@ -772,23 +772,11 @@ async def create(interaction: discord.Interaction, usertag: discord.Member, emai
         # ✅ Send after processing
         await interaction.followup.send(
             f"✅ Account created for {usertag.mention}\nEmail: `{email}`\nPassword: `{password}`"
-        )
 
-        # DM the user
-        try:
-            await usertag.send(
-                f"🎉 Your DragonCloud panel account has been created!\n**Email:** {email}\n**Password:** {password}\nPanel: https://dragoncloud.godanime.net"
-            )
-        except:
-            await interaction.followup.send("⚠️ Could not DM the user.")
-
-    except Exception as e:
-        await interaction.followup.send(f"❌ Error: `{str(e)}`")
-
-# ✅ Function to get user ID by email
+# ✅ Get user ID from Pterodactyl by email
 async def get_user_id_by_email(email):
     headers = {
-        "Authorization": f"Bearer {PTERO_API_KEY}",
+        "Authorization": f"Bearer {API_KEY}",
         "Accept": "application/json"
     }
     async with aiohttp.ClientSession() as session:
@@ -799,7 +787,7 @@ async def get_user_id_by_email(email):
                     return user["attributes"]["id"]
     return None
 
-# ✅ /createserver command (Admin only)
+# ✅ /createserver (Admin only, no more "thinking...")
 @bot.tree.command(name="createserver", description="Create a Pterodactyl server (Admin only)")
 @app_commands.checks.has_permissions(administrator=True)
 async def createserver(
@@ -813,15 +801,15 @@ async def createserver(
     nest: int,
     egg: int
 ):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.send_message(f"⏳ Creating server `{server_name}` for `{owner_email}`...", ephemeral=True)
 
     user_id = await get_user_id_by_email(owner_email)
     if not user_id:
-        await interaction.followup.send(f"❌ No user found with email `{owner_email}`.")
+        await interaction.followup.send(f"❌ No user found with email `{owner_email}`.", ephemeral=True)
         return
 
     headers = {
-        "Authorization": f"Bearer {PTERO_API_KEY}",
+        "Authorization": f"Bearer {API_KEY}",
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
@@ -852,12 +840,22 @@ async def createserver(
     }
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(f"{PTERO_PANEL_URL}/api/application/servers", headers=headers, json=payload) as resp:
+        async with session.post(f"{PANEL_URL}/api/application/servers", headers=headers, json=payload) as resp:
             if resp.status == 201:
-                await interaction.followup.send(f"✅ Server `{server_name}` created successfully for `{owner_email}` (User ID: `{user_id}`).")
+                await interaction.followup.send(f"✅ Server `{server_name}` created successfully for `{owner_email}` (User ID: `{user_id}`).", ephemeral=True)
             else:
                 error_text = await resp.text()
-                await interaction.followup.send(f"❌ Failed to create server:\n```{error_text}```")
+                await interaction.followup.send(f"❌ Failed to create server:\n```{error_text}```", ephemeral=True)
+
+# ✅ /dm command to send a private message to a user
+@bot.tree.command(name="dm", description="Send a DM to a user")
+@app_commands.describe(user="The user to DM", message="The message to send")
+async def dm_user(interaction: discord.Interaction, user: discord.User, message: str):
+    try:
+        await user.send(message)
+        await interaction.response.send_message(f"📨 Sent DM to {user.mention}", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.response.send_message(f"❌ Cannot send DM to {user.mention} (they may have DMs disabled).", ephemeral=True)
 
 # ✅ /serverinfo command
 @bot.tree.command(name="serverinfo", description="Show server info in green embed")
