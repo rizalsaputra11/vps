@@ -743,7 +743,7 @@ async def nodes(interaction: discord.Interaction):
         )
     await interaction.followup.send(embed=emb)
 
-@bot.tree.command(name="create", description="Create a Pterodactyl panel account")
+@bot.tree.command(name="createat", description="Create a Pterodactyl panel account")
 @app_commands.describe(usertag="Mention the user", email="Email address", password="Password")
 async def create(interaction: discord.Interaction, usertag: discord.Member, email: str, password: str):
     await interaction.response.defer(thinking=True)  # ✅ Prevents timeout
@@ -784,54 +784,138 @@ async def create(interaction: discord.Interaction, usertag: discord.Member, emai
     except Exception as e:
         await interaction.followup.send(f"❌ Error: `{str(e)}`")
 
-@bot.tree.command(name="createserver", description="Create a new server on the panel")
-@app_commands.describe(
-    servername="Name of the server",
-    email="Owner's email address",
-    cpu="CPU limit in %",
-    memory="Memory limit in MB",
-    disk="Disk limit in MB",
-    nest_id="Nest ID for the server",
-    egg_id="Egg ID for the server",
-    node="Node ID for the server"
-)
-async def createserver(interaction: discord.Interaction, servername: str, email: str, cpu: int, memory: int, disk: int, nest_id: int, egg_id: int, node: int):
-    await interaction.response.defer(ephemeral=True)  # Prevents timeout
+class PteroManager(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-    try:
-        # Example: Create server in Pterodactyl
-        panel_url = "https://dragoncloud.godanime.net"
-        admin_api_key = "ptlc_wWHTuow6DNWC0aDpVqcQZl4I5qZFbthzO4EEHZpYrhs"
-
-        payload = {
-            "name": servername,
-            "user": get_user_id_by_email(email),  # Your function to get panel user ID
-            "nest": nest_id,
-            "egg": egg_id,
-            "docker_image": "ghcr.io/pterodactyl/yolks:java_17",
-            "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar server.jar",
-            "limits": {
-                "memory": memory,
-                "swap": 0,
-                "disk": disk,
-                "io": 500,
-                "cpu": cpu
-            },
-            "feature_limits": {"databases": 1, "backups": 1, "allocations": 1},
-            "deploy": {"locations": [node], "dedicated_ip": False, "port_range": []}
+    async def get_user_id_by_email(self, email: str) -> int:
+        """Fetch Pterodactyl user ID from email."""
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         }
 
-        headers = {"Authorization": f"Bearer {admin_api_key}", "Content-Type": "application/json", "Accept": "application/json"}
-
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{panel_url}/api/application/servers", headers=headers, json=payload) as resp:
+            async with session.get(f"{PANEL_URL}/api/application/users", headers=headers) as resp:
                 data = await resp.json()
-                if resp.status == 201:
-                    await interaction.followup.send(f"✅ Server **{servername}** created successfully!", ephemeral=True)
-                else:
-                    await interaction.followup.send(f"❌ Failed to create server: {data}", ephemeral=True)
 
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ Error: {e}", ephemeral=True)
+                if resp.status != 200:
+                    raise Exception(f"Failed to fetch users: {data}")
+
+                for user in data["data"]:
+                    if user["attributes"]["email"].lower() == email.lower():
+                        return user["attributes"]["id"]
+
+                raise Exception(f"No user found with email {email}")
+
+    @app_commands.command(name="createserver", description="Create a server for a user (Admin only).")
+    @app_commands.describe(
+        server_name="Name of the server",
+        email="Email of the server owner",
+        node="Node ID",
+        cpu="CPU limit (in %)",
+        memory="Memory limit (in MB)",
+        disk="Disk space (in MB)",
+        nest_id="Nest ID",
+        egg_id="Egg ID"
+    )
+    async def createserver(
+        self, interaction: discord.Interaction,
+        server_name: str, email: str, node: int, cpu: int,
+        memory: int, disk: int, nest_id: int, egg_id: int
+    ):
+        # Admin check
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ You do not have permission to use this command.", ephemeral=True)
+
+        await interaction.response.send_message("🛠 Creating Server... Please wait...", ephemeral=True)
+
+        try:
+            user_id = await self.get_user_id_by_email(email)
+
+            payload = {
+                "name": server_name,
+                "user": user_id,
+                "egg": egg_id,
+                "docker_image": "ghcr.io/parkervcp/yolks:nodejs_18",
+                "startup": "node index.js",
+                "environment": {},
+                "limits": {
+                    "memory": memory,
+                    "swap": 0,
+                    "disk": disk,
+                    "io": 500,
+                    "cpu": cpu
+                },
+                "feature_limits": {
+                    "databases": 1,
+                    "backups": 1,
+                    "allocations": 1
+                },
+                "allocation": {
+                    "default": 1
+                }
+            }
+
+            headers = {
+                "Authorization": f"Bearer {API_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{PANEL_URL}/api/application/servers", json=payload, headers=headers) as resp:
+                    data = await resp.json()
+                    if resp.status == 201:
+                        await interaction.user.send(f"✅ Server '{server_name}' created successfully!\nPanel: {PANEL_URL}")
+                    else:
+                        await interaction.user.send(f"❌ Failed to create server: {data}")
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+    @app_commands.command(name="create", description="Create a Pterodactyl user (Admin only).")
+    @app_commands.describe(
+        username="Username",
+        email="Email",
+        password="Password"
+    )
+    async def create_user(self, interaction: discord.Interaction, username: str, email: str, password: str):
+        # Admin check
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ You do not have permission to use this command.", ephemeral=True)
+
+        await interaction.response.send_message("🛠 Creating User... Please wait...", ephemeral=True)
+
+        payload = {
+            "username": username,
+            "email": email,
+            "first_name": username,
+            "last_name": "User",
+            "password": password,
+            "root_admin": False,
+            "language": "en"
+        }
+
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{PANEL_URL}/api/application/users", json=payload, headers=headers) as resp:
+                    data = await resp.json()
+                    if resp.status == 201:
+                        await interaction.user.send(f"✅ User '{username}' created!\nEmail: {email}\nPassword: {password}\nPanel: {PANEL_URL}")
+                    else:
+                        await interaction.user.send(f"❌ Failed to create user: {data}")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+async def setup(bot):
+    await bot.add_cog(PteroManager(bot))
 
 bot.run(TOKEN)
