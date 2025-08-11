@@ -746,23 +746,6 @@ async def nodes(interaction: discord.Interaction):
         )
     await interaction.followup.send(embed=emb)
 
-# ---------------- Persist panel config ----------------
-def load_config():
-    try:
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {"panel_url": None, "api_key": None}
-
-
-def save_config(cfg):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg, f, indent=2)
-
-
-config = load_config()
-
-
 # ---------------- Helpers: Pterodactyl API ----------------
 async def api_get(path: str):
     if not config.get("api_key") or not config.get("panel_url"):
