@@ -785,46 +785,21 @@ async def create(interaction: discord.Interaction, usertag: discord.Member, emai
     except Exception as e:
         await interaction.followup.send(f"❌ Error: `{str(e)}`")
 
-class PteroManager(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    async def get_user_id_by_email(self, email: str) -> int:
-        """Fetch Pterodactyl user ID from email."""
-        headers = {
-            "Authorization": f"Bearer {API_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{PANEL_URL}/api/application/users", headers=headers) as resp:
-                data = await resp.json()
-
-                if resp.status != 200:
-                    raise Exception(f"Failed to fetch users: {data}")
-
-                for user in data["data"]:
-                    if user["attributes"]["email"].lower() == email.lower():
-                        return user["attributes"]["id"]
-
-                raise Exception(f"No user found with email {email}")
-
 # ✅ Function to get user ID by email
 async def get_user_id_by_email(email):
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {PTERO_API_KEY}",
         "Accept": "application/json"
     }
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{PANEL_URL}/api/application/users", headers=headers) as resp:
+        async with session.get(f"{PTERO_PANEL_URL}/api/application/users", headers=headers) as resp:
             data = await resp.json()
             for user in data["data"]:
                 if user["attributes"]["email"].lower() == email.lower():
                     return user["attributes"]["id"]
     return None
 
-# ✅ Slash command for creating server (Admin only)
+# ✅ /createserver command (Admin only)
 @bot.tree.command(name="createserver", description="Create a Pterodactyl server (Admin only)")
 @app_commands.checks.has_permissions(administrator=True)
 async def createserver(
@@ -846,7 +821,7 @@ async def createserver(
         return
 
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {PTERO_API_KEY}",
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
@@ -877,12 +852,27 @@ async def createserver(
     }
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(f"{PANEL_URL}/api/application/servers", headers=headers, json=payload) as resp:
+        async with session.post(f"{PTERO_PANEL_URL}/api/application/servers", headers=headers, json=payload) as resp:
             if resp.status == 201:
-                await interaction.followup.send(f"✅ Server `{server_name}` created successfully for `{owner_email}`.")
+                await interaction.followup.send(f"✅ Server `{server_name}` created successfully for `{owner_email}` (User ID: `{user_id}`).")
             else:
                 error_text = await resp.text()
                 await interaction.followup.send(f"❌ Failed to create server:\n```{error_text}```")
+
+# ✅ /serverinfo command
+@bot.tree.command(name="serverinfo", description="Show server info in green embed")
+async def serverinfo(interaction: discord.Interaction):
+    guild = interaction.guild
+    embed = discord.Embed(
+        title="📡 Server Information",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="👑 Server Owner", value=f"{guild.owner}", inline=True)
+    embed.add_field(name="🆔 Owner ID", value=f"{guild.owner.id}", inline=True)
+    embed.add_field(name="📶 Ping", value=f"{round(bot.latency * 1000)} ms", inline=True)
+    embed.add_field(name="👥 Members", value=f"{guild.member_count}", inline=True)
+    embed.set_footer(text="Bot Dev. Gamerzhacker | Bot Version 2.70")
+    await interaction.response.send_message(embed=embed)
 
 # ===== COMMAND: Create User =====
 @tree.command(name="create", description="Create a Pterodactyl user (Admin only).")
